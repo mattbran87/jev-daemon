@@ -1,11 +1,20 @@
 [package]
 name = "jev"
-description = "The jev command line"
+description = "The jev command line and the jevd daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+
+[[bin]]
+name = "jev"
+path = "src/main.rs"
+
+[[bin]]
+name = "jevd"
+path = "src/bin/jevd.rs"
+doc = false
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
@@ -13,12 +22,12 @@ jev-proto = { version = "0.1.0", path = "../jev-proto" }
 jevd = { version = "0.1.0", path = "../jevd" }
 rpassword = "7"
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "time"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time"] }
 zeroize = "1.9"
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "time"] }
 wiremock = "0.6"
 
 [target.'cfg(unix)'.dev-dependencies]
