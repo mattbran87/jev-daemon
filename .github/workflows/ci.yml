@@ -8,10 +8,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch cancels the run that is still going.
+# A newer push to the same pull request cancels the run that is still going.
+# On main, every commit keeps its own run.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -51,7 +52,8 @@ jobs:
         run: cargo test --workspace --locked
 
   msrv:
-    name: msrv (Rust 1.85, no tests)
+    # The MSRV value lives in env.MSRV and in the workspace rust-version.
+    name: msrv
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -59,16 +61,21 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install "$MSRV" --profile minimal
+        run: |
+          rustup toolchain install "$MSRV" --profile minimal
+          rustup default "$MSRV"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
       - name: Check
         # No --all-targets: wiremock, a test-only dependency, needs Rust 1.88.
-        run: cargo +"$MSRV" check --workspace --locked
+        run: cargo check --workspace --locked
 
   mod:
     name: mod (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    env:
+      DISABLE_AUTOUPDATER: "1"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -85,8 +92,8 @@ jobs:
         run: npm install -g @anthropic-ai/claude-code@2.1.300
       - name: Validate the marketplace and the plugin
         run: |
-          claude plugin validate .
-          claude plugin validate plugins/claude-code
+          claude plugin validate --strict .
+          claude plugin validate --strict plugins/claude-code
       - name: The mod's tests
         run: claude plugin test plugins/claude-code
 
@@ -94,9 +101,6 @@ jobs:
     name: cargo deny (${{ matrix.checks }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # A new advisory appears with no change in this repo, so it must not turn a pull request red.
-    # advisories.yml runs it every day and fails there; on a push to main it still fails here.
-    continue-on-error: ${{ matrix.checks == 'advisories' && github.event_name == 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
@@ -106,5 +110,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25  # v2.1.1
+        # A new advisory appears with no change in this repo, so on a pull request its failure
+        # does not fail the job. advisories.yml runs it every day and fails there; on main it fails here.
+        continue-on-error: ${{ matrix.checks == 'advisories' && github.event_name == 'pull_request' }}
         with:
           command: check ${{ matrix.checks }}

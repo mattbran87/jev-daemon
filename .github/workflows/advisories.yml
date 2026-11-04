@@ -2,6 +2,8 @@ name: advisories
 
 # A new RUSTSEC advisory appears with no change in this repo. This daily run fails when one does,
 # so someone sees it, and no pull request turns red for it.
+# GitHub turns off a scheduled workflow after 60 days with no repo activity.
+# Failure mail goes to whoever last changed the cron line.
 on:
   schedule:
     - cron: "17 6 * * *"
