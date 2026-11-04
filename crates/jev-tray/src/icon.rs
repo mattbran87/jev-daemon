@@ -1,0 +1,187 @@
+//! Which icon file to show (jev-tray spec section 3): the state gives the
+//! mark, the system gives the color, and the screen scale gives the size.
+
+use crate::state::State;
+
+/// The color of the icon's lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shade {
+    Black,
+    White,
+}
+
+/// The sizes in `icons/`, in pixels, smallest first.
+pub const SIZES: [u32; 5] = [16, 20, 24, 32, 48];
+
+/// True where the bar recolors the icon itself: on macOS the black icon is
+/// a template image.
+pub const TEMPLATE: bool = cfg!(target_os = "macos");
+
+/// The icon size in points on this system's bar.
+pub const POINTS: u32 = if cfg!(target_os = "macos") {
+    18
+} else if cfg!(windows) {
+    16
+} else {
+    24
+};
+
+/// The shade for a Windows taskbar, from the value `SystemUsesLightTheme`.
+/// A light taskbar (1) gets black; a dark one (0) gets white. With no value,
+/// the taskbar is dark, as on Windows 10 by default.
+pub fn shade_for_windows(system_uses_light_theme: Option<u32>) -> Shade {
+    match system_uses_light_theme {
+        Some(0) | None => Shade::White,
+        Some(_) => Shade::Black,
+    }
+}
+
+/// The shade for this system's bar now: black on macOS, where it is a
+/// template image.
+#[cfg(target_os = "macos")]
+pub fn shade_now() -> Shade {
+    Shade::Black
+}
+
+/// The shade for this system's bar now. It reads the registry each time,
+/// so a theme change shows at the next check.
+#[cfg(windows)]
+pub fn shade_now() -> Shade {
+    shade_for_windows(windows_theme::system_uses_light_theme())
+}
+
+/// The shade for this system's bar now: white, because Linux panels do not
+/// report their theme reliably, and most panels are dark.
+#[cfg(not(any(target_os = "macos", windows)))]
+pub fn shade_now() -> Shade {
+    Shade::White
+}
+
+/// The smallest committed size that covers `points` at `scale`, or the
+/// largest one.
+pub fn size_for(points: u32, scale: f64) -> u32 {
+    let wanted = f64::from(points) * scale;
+    SIZES
+        .into_iter()
+        .find(|&size| f64::from(size) >= wanted - 0.01)
+        .unwrap_or(SIZES[SIZES.len() - 1])
+}
+
+/// The files for one state and shade, in the order of `SIZES`.
+macro_rules! files {
+    ($name:literal) => {
+        [
+            include_bytes!(concat!("../icons/", $name, "-16.png")) as &[u8],
+            include_bytes!(concat!("../icons/", $name, "-20.png")),
+            include_bytes!(concat!("../icons/", $name, "-24.png")),
+            include_bytes!(concat!("../icons/", $name, "-32.png")),
+            include_bytes!(concat!("../icons/", $name, "-48.png")),
+        ]
+    };
+}
+
+const ON_BLACK: [&[u8]; 5] = files!("on-black");
+const ON_WHITE: [&[u8]; 5] = files!("on-white");
+const OFF_BLACK: [&[u8]; 5] = files!("off-black");
+const OFF_WHITE: [&[u8]; 5] = files!("off-white");
+
+/// The PNG bytes of one committed icon. A size not in `SIZES` gives the
+/// next larger file, or the largest one.
+pub fn png(state: State, shade: Shade, size: u32) -> &'static [u8] {
+    let files = match (state, shade) {
+        (State::On, Shade::Black) => ON_BLACK,
+        (State::On, Shade::White) => ON_WHITE,
+        (State::Off, Shade::Black) => OFF_BLACK,
+        (State::Off, Shade::White) => OFF_WHITE,
+    };
+    let size = size_for(size, 1.0);
+    let index = SIZES.iter().position(|&each| each == size).unwrap_or(0);
+    files[index]
+}
+
+/// Reads the taskbar theme. Not unit-tested: it reads the real registry.
+#[cfg(windows)]
+mod windows_theme {
+    use windows_sys::Win32::Foundation::ERROR_SUCCESS;
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+
+    const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+    const VALUE: &str = "SystemUsesLightTheme";
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(Some(0)).collect()
+    }
+
+    /// The DWORD `SystemUsesLightTheme`, or `None` when it cannot be read.
+    pub fn system_uses_light_theme() -> Option<u32> {
+        let (key, value) = (wide(KEY), wide(VALUE));
+        let mut data: u32 = 0;
+        let mut size = std::mem::size_of::<u32>() as u32;
+        // SAFETY: both names end in a zero, and `data` and `size` are valid
+        // for writes of the sizes given.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                value.as_ptr(),
+                RRF_RT_REG_DWORD,
+                std::ptr::null_mut(),
+                (&mut data as *mut u32).cast(),
+                &mut size,
+            )
+        };
+        (status == ERROR_SUCCESS).then_some(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_light_taskbar_gets_black_and_a_dark_one_white() {
+        assert_eq!(shade_for_windows(Some(1)), Shade::Black);
+        assert_eq!(shade_for_windows(Some(0)), Shade::White);
+    }
+
+    #[test]
+    fn a_missing_theme_value_counts_as_dark() {
+        assert_eq!(shade_for_windows(None), Shade::White);
+    }
+
+    #[test]
+    fn macos_and_linux_use_a_fixed_shade() {
+        #[cfg(target_os = "macos")]
+        assert_eq!(shade_now(), Shade::Black);
+        #[cfg(not(any(target_os = "macos", windows)))]
+        assert_eq!(shade_now(), Shade::White);
+        assert_eq!(TEMPLATE, cfg!(target_os = "macos"));
+    }
+
+    #[test]
+    fn the_size_covers_the_scaled_points() {
+        assert_eq!(size_for(16, 1.0), 16);
+        assert_eq!(size_for(16, 1.25), 20);
+        assert_eq!(size_for(16, 1.5), 24);
+        assert_eq!(size_for(16, 2.0), 32);
+        assert_eq!(size_for(16, 2.5), 48);
+        assert_eq!(size_for(16, 4.0), 48);
+        assert_eq!(size_for(18, 2.0), 48);
+        assert_eq!(size_for(24, 1.0), 24);
+    }
+
+    #[test]
+    fn each_choice_gives_its_own_file() {
+        let mut seen = std::collections::HashSet::new();
+        for state in [State::On, State::Off] {
+            for shade in [Shade::Black, Shade::White] {
+                for size in SIZES {
+                    let bytes = png(state, shade, size);
+                    assert_eq!(&bytes[1..4], b"PNG");
+                    assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), size);
+                    assert!(seen.insert(bytes.as_ptr()));
+                }
+            }
+        }
+    }
+}
