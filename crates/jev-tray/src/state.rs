@@ -20,7 +20,7 @@ pub enum State {
     Off,
 }
 
-/// One check, with the 5 s limit.
+/// One check, with the 5 s limit. For checks that repeat, use [`Checker`].
 pub fn check(paths: &Paths) -> State {
     check_within(paths, CHECK_LIMIT)
 }
@@ -65,7 +65,7 @@ impl Checker {
 }
 
 /// Runs one check on its own thread and waits for it until the deadline.
-/// Returns the state and the thread, when it started.
+/// Returns the state, and the thread when it still runs after the deadline.
 fn run_check(paths: &Paths, limit: Duration) -> (State, Option<JoinHandle<()>>) {
     let deadline = Instant::now() + limit;
     let paths = paths.clone();
@@ -78,10 +78,15 @@ fn run_check(paths: &Paths, limit: Duration) -> (State, Option<JoinHandle<()>>) 
     let Ok(thread) = spawned else {
         return (State::Off, None);
     };
-    let state = result
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .unwrap_or(State::Off);
-    (state, Some(thread))
+    match result.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        // The thread sends its result before it drops its connection, so
+        // wait for it to end: a later check must not find it still running.
+        Ok(state) => {
+            let _ = thread.join();
+            (state, None)
+        }
+        Err(_) => (State::Off, Some(thread)),
+    }
 }
 
 fn check_now(paths: &Paths, deadline: Instant) -> State {
