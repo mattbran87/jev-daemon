@@ -1,0 +1,15 @@
+{
+  "name": "jev-daemon",
+  "owner": { "name": "Matthew Brandenburg", "email": "mattbran87@users.noreply.github.com" },
+  "metadata": {
+    "description": "jev for Claude Code: lets plugins ask TypeSafe's Jev model through the jev CLI, which holds your keys."
+  },
+  "plugins": [
+    {
+      "name": "jev-daemon",
+      "source": "./plugins/claude-code",
+      "description": "Gives other Claude Code plugins $.jev: they ask TypeSafe's Jev model through the jev CLI, which holds your keys. Each plugin pairs once, and you approve it with jev allow in a terminal.",
+      "license": "Apache-2.0"
+    }
+  ]
+}
