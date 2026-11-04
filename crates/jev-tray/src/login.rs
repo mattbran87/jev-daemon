@@ -143,16 +143,24 @@ fn storable(exe: &Path) -> io::Result<&str> {
     }
 }
 
-/// Writes `text` to a temporary file next to `file`, and then renames it
-/// over `file`, so a failed write never leaves half an entry.
+/// Writes `text` to a temporary file next to `file`, syncs it to disk, and
+/// then renames it over `file`, so a failed write or a crash never leaves
+/// half an entry.
 fn write_file(file: &Path, text: &str) -> io::Result<()> {
+    use std::io::Write;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let mut temp = file.as_os_str().to_owned();
     temp.push(".tmp");
     let temp = PathBuf::from(temp);
-    let result = std::fs::write(&temp, text).and_then(|()| std::fs::rename(&temp, file));
+    let result = (|| {
+        let mut out = std::fs::File::create(&temp)?;
+        out.write_all(text.as_bytes())?;
+        out.sync_all()?;
+        drop(out);
+        std::fs::rename(&temp, file)
+    })();
     if result.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
@@ -171,9 +179,10 @@ pub fn autostart_dir(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> 
     absolute("HOME").map(|home| home.join(".config").join("autostart"))
 }
 
-/// The registry string: the full path of `jev-tray.exe`, quoted.
-pub fn run_value(exe: &Path) -> String {
-    quoted(&exe.to_string_lossy())
+/// The registry string: the full path of `jev-tray.exe`, quoted. It is
+/// what `write` stores, and it refuses the same paths with `InvalidInput`.
+pub fn run_value(exe: &Path) -> io::Result<String> {
+    storable(exe).map(quoted)
 }
 
 fn quoted(text: &str) -> String {
@@ -416,9 +425,10 @@ mod tests {
     #[test]
     fn the_run_value_is_the_quoted_full_path() {
         assert_eq!(
-            run_value(Path::new(r"C:\Program Files\jev\jev-tray.exe")),
+            run_value(Path::new(r"C:\Program Files\jev\jev-tray.exe")).unwrap(),
             r#""C:\Program Files\jev\jev-tray.exe""#
         );
+        assert_invalid_input(run_value(Path::new("C:\\a\nb\\jev-tray.exe")).map(drop));
     }
 
     #[test]
