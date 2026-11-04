@@ -58,9 +58,12 @@ pub fn shade_now() -> Shade {
 }
 
 /// The smallest committed size that covers `points` at `scale`, or the
-/// largest one.
+/// largest one. A scale too large for every size, or a NaN scale, gives the
+/// largest size; a zero or negative scale gives the smallest.
 pub fn size_for(points: u32, scale: f64) -> u32 {
     let wanted = f64::from(points) * scale;
+    // The 0.01 allows for float error in the scale, so that a product that
+    // should equal a size exactly (16 x 1.25 = 20) still picks that size.
     SIZES
         .into_iter()
         .find(|&size| f64::from(size) >= wanted - 0.01)
@@ -95,7 +98,10 @@ pub fn png(state: State, shade: Shade, size: u32) -> &'static [u8] {
         (State::Off, Shade::White) => OFF_WHITE,
     };
     let size = size_for(size, 1.0);
-    let index = SIZES.iter().position(|&each| each == size).unwrap_or(0);
+    let index = SIZES
+        .iter()
+        .position(|&each| each == size)
+        .expect("size_for returns a member of SIZES");
     files[index]
 }
 
@@ -168,6 +174,14 @@ mod tests {
         assert_eq!(size_for(16, 4.0), 48);
         assert_eq!(size_for(18, 2.0), 48);
         assert_eq!(size_for(24, 1.0), 24);
+        // Windows, 16 points.
+        assert_eq!(size_for(16, 1.75), 32);
+        assert_eq!(size_for(16, 3.0), 48);
+        // macOS, 18 points.
+        assert_eq!(size_for(18, 1.0), 20);
+        assert_eq!(size_for(18, 1.5), 32);
+        // Linux, 24 points: 60 pixels is more than any size, so the largest.
+        assert_eq!(size_for(24, 2.5), 48);
     }
 
     #[test]
@@ -183,5 +197,22 @@ mod tests {
                 }
             }
         }
+        // One anchor per table, so swapped arms in `png` fail.
+        assert_eq!(
+            png(State::On, Shade::Black, 16),
+            include_bytes!("../icons/on-black-16.png")
+        );
+        assert_eq!(
+            png(State::On, Shade::White, 20),
+            include_bytes!("../icons/on-white-20.png")
+        );
+        assert_eq!(
+            png(State::Off, Shade::Black, 32),
+            include_bytes!("../icons/off-black-32.png")
+        );
+        assert_eq!(
+            png(State::Off, Shade::White, 48),
+            include_bytes!("../icons/off-white-48.png")
+        );
     }
 }
