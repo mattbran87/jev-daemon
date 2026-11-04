@@ -353,7 +353,8 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 | Item | Design |
 | --- | --- |
 | Tool | `dist` 0.33.1, run by `.github/workflows/release.yml` on each version tag. Its settings sit in `dist-workspace.toml`; `dist generate` writes the workflow. |
-| Targets | `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-apple-darwin` |
+| Targets | `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin` |
+| macOS | Apple Silicon (M1 and later) only. There is no Intel Mac archive. |
 | Archive | One app, the `jev` package, owns both binaries, so each archive holds `jev` and `jevd` in one folder. The peer check depends on that. |
 | Installers | Shell and PowerShell, from `dist`. They install both binaries into `$CARGO_HOME/bin`. `cargo install --locked --git https://github.com/mattbran87/jev-daemon jev` also works and installs both. |
 | Linux | glibc (`gnu`) builds on `ubuntu-22.04` and `ubuntu-22.04-arm`, so they need glibc 2.35 or newer. No musl build in v1. Every target builds on a native runner. |
@@ -368,6 +369,7 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 ### CI on each push and pull request
 
 - Windows, Linux, and macOS: `cargo fmt --check`, `cargo clippy` with warnings as errors, `cargo test --locked`, on Rust 1.99.1. CI pins its toolchain, so a new Rust release cannot fail a commit that passed.
+- The macOS jobs run on `macos-14`, an Apple Silicon runner.
 - The MSRV, Rust 1.85: `cargo check --workspace --locked`, with no test targets, because `wiremock`, a test-only dependency, needs Rust 1.88.
 - The mod, on the 3 systems, with Claude Code 2.1.300: `claude plugin validate` on the marketplace and the plugin, and `claude plugin test`. `tsc` runs locally only: `/plugin-types` works only in an interactive session, and its file is Claude Code's own text, so the repo does not hold it.
 - `cargo deny` for licenses, security advisories, bans, and sources, with `deny.toml`. It ignores 3 "unmaintained" notices for the `zbus` 4 crates (RUSTSEC-2026-0370, -0371, -0372), each with its reason, until the MSRV allows `keyring` 4.

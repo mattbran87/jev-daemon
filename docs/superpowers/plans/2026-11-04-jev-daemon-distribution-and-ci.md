@@ -38,7 +38,7 @@ These facts come from runs on this machine on 2026-11-04.
 | Fact | What it changes |
 | --- | --- |
 | `dist plan` on the old layout makes 2 apps, `jev` and `jevd`, each with its own archive and installers. | The spec needs both binaries in one archive. Task 1 moves `jevd`'s binary into the `jev` package; `dist plan` then shows one app with both binaries in every archive. |
-| `dist` picks a native runner for every target: `ubuntu-22.04`, `ubuntu-22.04-arm`, `macos-14`, `macos-15-intel`, `windows-2022`. | `aws-lc-sys` never needs a C cross compiler. The Linux archives need glibc 2.35 or newer, from Ubuntu 22.04. |
+| `dist` picks a native runner for every target: `ubuntu-22.04`, `ubuntu-22.04-arm`, `macos-14`, `windows-2022`. | `aws-lc-sys` never needs a C cross compiler. The Linux archives need glibc 2.35 or newer, from Ubuntu 22.04. |
 | `dist` 0.33.1 writes `actions/checkout@v6`, `upload-artifact@v7`, and `download-artifact@v8` by tag. Its `github-action-commits` setting pins each one to a commit. | Every action in both workflows is pinned to a commit SHA, as spec section 8 asks. |
 | `cargo deny check` passes licenses, bans, and sources. Advisories fail on 3 "unmaintained" notices: `zvariant`, `zbus_names`, and `zvariant_derive` (RUSTSEC-2026-0370, -0371, -0372, issued 2026-10-17). They are not vulnerabilities. They reach us on Linux only, through `keyring` 3.6, `secret-service` 4, and `zbus` 4. | `deny.toml` ignores the 3 IDs, each with its reason. The fix is `zbus` 6, which `keyring` 3.6 does not use; `keyring` 4 needs Rust 1.88. |
 | `cargo +1.85 check --workspace --locked` passes. With `--all-targets` it fails, because `wiremock` 0.6.5, a test-only dependency, uses let-chains (Rust 1.88). | The MSRV job checks the shipped code only. |
@@ -308,7 +308,6 @@ targets = [
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
     "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
 ]
 
 [advisories]
@@ -425,7 +424,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # macOS support is Apple Silicon only; macos-14 is an Apple Silicon runner.
+        os: [ubuntu-latest, windows-latest, macos-14]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -464,7 +464,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-14]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -554,7 +554,7 @@ ci = "github"
 # The installers to generate for each app
 installers = ["shell", "powershell"]
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
 # Where to host releases
@@ -585,7 +585,7 @@ Check the result:
 - [ ] **Step 4: Check the archives**
 
 Run: `dist plan`
-Expected: one app, `jev 0.1.0`, with `jev-installer.sh`, `jev-installer.ps1`, and 5 archives. Each archive lists 2 binaries, `[bin] jev` and `[bin] jevd` (`jev.exe` and `jevd.exe` in the Windows `.zip`), plus `[misc] LICENSE`. No app named `jevd` appears.
+Expected: one app, `jev 0.1.0`, with `jev-installer.sh`, `jev-installer.ps1`, and 4 archives. Each archive lists 2 binaries, `[bin] jev` and `[bin] jevd` (`jev.exe` and `jevd.exe` in the Windows `.zip`), plus `[misc] LICENSE`. No app named `jevd` appears.
 
 - [ ] **Step 5: Run the gates and commit**
 
@@ -752,6 +752,7 @@ Write the run IDs, the checks, and any fixes in your report. Nothing to commit, 
 - A third-party license notices file in every archive, for example from `cargo about generate`, added through `dist`'s `include`. The MIT, Apache, BSD, ISC, and Unicode licenses of the dependencies need it.
 - A tag ruleset on GitHub, so only maintainers push `v*` tags.
 - macOS signing and notarization, in a later release.
+- macOS support is Apple Silicon (M1 and later) only. There is no Intel Mac archive. The CI's macOS jobs run on `macos-14`.
 - Fix the 5 rustdoc "unclosed HTML tag" warnings in the `jev` library docs before CI runs `cargo doc`.
 - `cargo deny check` prints 10 duplicate-version warnings on `e6198d7` (a review counted 11), not the 1 that Task 3 expects.
 - Before the tag: the docs, a `CHANGELOG.md` entry for 0.1.0 (`dist` uses it for the release notes), and the person's go-ahead.
