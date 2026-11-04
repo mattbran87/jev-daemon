@@ -10,7 +10,14 @@ fn read(path: &str) -> String {
 }
 
 fn version(text: &str) -> (u64, u64, u64) {
-    let parts: Vec<u64> = text.split('.').map(|part| part.parse().unwrap()).collect();
+    let parts: Vec<u64> = text
+        .split('.')
+        .map(|part| {
+            part.trim()
+                .parse()
+                .unwrap_or_else(|_| panic!("{text:?} is not major.minor.patch"))
+        })
+        .collect();
     assert_eq!(parts.len(), 3, "{text} is not major.minor.patch");
     (parts[0], parts[1], parts[2])
 }
@@ -19,18 +26,54 @@ fn version(text: &str) -> (u64, u64, u64) {
 fn the_plugin_version_is_the_crate_version() {
     let manifest: Value =
         serde_json::from_str(&read("plugins/claude-code/.claude-plugin/plugin.json")).unwrap();
-    assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        manifest["version"],
+        env!("CARGO_PKG_VERSION"),
+        "plugin.json version must equal the crate version"
+    );
+}
+
+#[test]
+fn the_marketplace_entry_has_no_other_version() {
+    let marketplace: Value =
+        serde_json::from_str(&read(".claude-plugin/marketplace.json")).unwrap();
+    let entry = marketplace["plugins"]
+        .as_array()
+        .expect("marketplace.json has a plugins array")
+        .iter()
+        .find(|plugin| plugin["source"] == "./plugins/claude-code")
+        .expect("marketplace.json lists the claude-code plugin");
+    if let Some(version) = entry.get("version") {
+        assert_eq!(
+            version,
+            env!("CARGO_PKG_VERSION"),
+            "marketplace.json version must equal the crate version"
+        );
+    }
 }
 
 #[test]
 fn the_mod_needs_no_jev_newer_than_this_one() {
     let text = read("plugins/claude-code/hooks/text.ts");
-    let line = text
-        .lines()
-        .find(|line| line.starts_with("export const MIN_JEV"))
-        .expect("text.ts declares MIN_JEV");
-    let inside = &line[line.find('[').unwrap() + 1..line.find(']').unwrap()];
-    let min = version(&inside.replace(", ", ".").replace(',', "."));
+    let after = &text[text.find("MIN_JEV").expect("text.ts declares MIN_JEV")..];
+    let open = after
+        .find('[')
+        .expect("MIN_JEV must be a [major, minor, patch] literal");
+    let close = after
+        .find(']')
+        .expect("MIN_JEV must be a [major, minor, patch] literal");
+    assert!(
+        open < close,
+        "MIN_JEV must be a [major, minor, patch] literal"
+    );
+    let min = version(
+        &after[open + 1..close]
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("."),
+    );
     assert!(
         min <= version(env!("CARGO_PKG_VERSION")),
         "MIN_JEV {min:?} is newer than jev {}",
