@@ -40,9 +40,12 @@ impl Login {
     #[cfg(target_os = "macos")]
     pub fn for_this_user() -> io::Result<Login> {
         let home = std::env::var_os("HOME")
-            .filter(|home| !home.is_empty())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
-        Ok(Login::launch_agent(Path::new(&home)))
+            .map(PathBuf::from)
+            .filter(|home| home.is_absolute())
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "HOME is not an absolute path")
+            })?;
+        Ok(Login::launch_agent(&home))
     }
 
     /// The entry for this user on this system.
@@ -66,9 +69,20 @@ impl Login {
         )
     }
 
-    /// True when the entry exists, whatever path it names.
+    /// True when the entry exists, whatever it holds (spec section 4).
+    /// It does not read the entry, so an entry that is not text is on too.
     pub fn is_on(&self) -> io::Result<bool> {
-        Ok(self.read()?.is_some())
+        match self {
+            Login::LaunchAgent(file) | Login::Autostart(file) => {
+                match std::fs::symlink_metadata(file) {
+                    Ok(_) => Ok(true),
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+                    Err(error) => Err(error),
+                }
+            }
+            #[cfg(windows)]
+            Login::Run { key, name } => registry::exists(key, name),
+        }
     }
 
     /// The entry's text (a file's content, or the registry string), or
@@ -88,13 +102,16 @@ impl Login {
     }
 
     /// Writes the entry, so it starts `exe` at sign-in. An entry that is
-    /// there already gets the new path.
+    /// there already gets the new path. A path that is not UTF-8, or that
+    /// holds a control character, fails with `InvalidInput` and writes
+    /// nothing: no entry could hold it whole.
     pub fn write(&self, exe: &Path) -> io::Result<()> {
+        let exe = storable(exe)?;
         match self {
-            Login::LaunchAgent(file) => write_file(file, &plist_text(exe)),
-            Login::Autostart(file) => write_file(file, &desktop_text(exe)),
+            Login::LaunchAgent(file) => write_file(file, &plist_text(Path::new(exe))),
+            Login::Autostart(file) => write_file(file, &desktop_text(Path::new(exe))),
             #[cfg(windows)]
-            Login::Run { key, name } => registry::write(key, name, &run_value(exe)),
+            Login::Run { key, name } => registry::write(key, name, &quoted(exe)),
         }
     }
 
@@ -111,29 +128,56 @@ impl Login {
     }
 }
 
+/// `exe` as text that an entry can hold whole, or `InvalidInput`.
+fn storable(exe: &Path) -> io::Result<&str> {
+    match exe.to_str() {
+        Some(text) if !text.chars().any(char::is_control) => Ok(text),
+        Some(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "the path holds a control character",
+        )),
+        None => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "the path is not UTF-8",
+        )),
+    }
+}
+
+/// Writes `text` to a temporary file next to `file`, and then renames it
+/// over `file`, so a failed write never leaves half an entry.
 fn write_file(file: &Path, text: &str) -> io::Result<()> {
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(file, text)
+    let mut temp = file.as_os_str().to_owned();
+    temp.push(".tmp");
+    let temp = PathBuf::from(temp);
+    let result = std::fs::write(&temp, text).and_then(|()| std::fs::rename(&temp, file));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
 }
 
 /// The Linux autostart folder: `$XDG_CONFIG_HOME/autostart`, or
 /// `$HOME/.config/autostart`. The XDG rules ignore a relative
-/// `XDG_CONFIG_HOME`. `var` stands in for the environment.
+/// `XDG_CONFIG_HOME`, and a relative `HOME` is ignored too. `var` stands in
+/// for the environment.
 pub fn autostart_dir(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
-    let set = |name: &str| var(name).filter(|value| !value.is_empty());
-    if let Some(config) = set("XDG_CONFIG_HOME").map(PathBuf::from) {
-        if config.is_absolute() {
-            return Some(config.join("autostart"));
-        }
+    let absolute = |name: &str| var(name).map(PathBuf::from).filter(|dir| dir.is_absolute());
+    if let Some(config) = absolute("XDG_CONFIG_HOME") {
+        return Some(config.join("autostart"));
     }
-    set("HOME").map(|home| PathBuf::from(home).join(".config").join("autostart"))
+    absolute("HOME").map(|home| home.join(".config").join("autostart"))
 }
 
 /// The registry string: the full path of `jev-tray.exe`, quoted.
 pub fn run_value(exe: &Path) -> String {
-    format!("\"{}\"", exe.display())
+    quoted(&exe.to_string_lossy())
+}
+
+fn quoted(text: &str) -> String {
+    format!("\"{text}\"")
 }
 
 /// The macOS launch agent that runs `exe` at load.
@@ -200,10 +244,11 @@ fn exec_quote(arg: &str) -> String {
 #[cfg(windows)]
 mod registry {
     use std::io;
-    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_SUCCESS};
+    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS};
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegCreateKeyExW, RegDeleteKeyValueW, RegGetValueW, RegSetValueExW, HKEY,
-        HKEY_CURRENT_USER, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_SZ,
+        HKEY_CURRENT_USER, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_ANY,
+        RRF_RT_REG_SZ,
     };
 
     fn wide(text: &str) -> Vec<u16> {
@@ -214,51 +259,64 @@ mod registry {
         io::Error::from_raw_os_error(status as i32)
     }
 
+    /// True when the value exists, whatever its type and data.
+    pub fn exists(key: &str, name: &str) -> io::Result<bool> {
+        let (key, name) = (wide(key), wide(name));
+        // SAFETY: both names end in a zero; with no buffer and no size, the
+        // call only looks the value up.
+        let status = unsafe {
+            RegGetValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                name.as_ptr(),
+                RRF_RT_ANY,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        match status {
+            ERROR_SUCCESS => Ok(true),
+            ERROR_FILE_NOT_FOUND => Ok(false),
+            _ => Err(failed(status)),
+        }
+    }
+
     pub fn read(key: &str, name: &str) -> io::Result<Option<String>> {
         let (key, name) = (wide(key), wide(name));
-        let mut size: u32 = 0;
-        // SAFETY: both names end in a zero; a null buffer asks for the size.
-        let status = unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                key.as_ptr(),
-                name.as_ptr(),
-                RRF_RT_REG_SZ,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                &mut size,
-            )
-        };
-        if status == ERROR_FILE_NOT_FOUND {
-            return Ok(None);
+        let mut buffer = vec![0u16; 260];
+        loop {
+            let mut size = (buffer.len() * 2) as u32;
+            // SAFETY: both names end in a zero, and the buffer holds `size` bytes.
+            let status = unsafe {
+                RegGetValueW(
+                    HKEY_CURRENT_USER,
+                    key.as_ptr(),
+                    name.as_ptr(),
+                    RRF_RT_REG_SZ,
+                    std::ptr::null_mut(),
+                    buffer.as_mut_ptr().cast(),
+                    &mut size,
+                )
+            };
+            match status {
+                ERROR_SUCCESS => {
+                    let chars = (size as usize / 2).min(buffer.len());
+                    let text = &buffer[..chars];
+                    let end = text.iter().position(|&c| c == 0).unwrap_or(text.len());
+                    return Ok(Some(String::from_utf16_lossy(&text[..end])));
+                }
+                ERROR_FILE_NOT_FOUND => return Ok(None),
+                // The value grew, or is longer than the buffer: `size` now
+                // holds the bytes it needs, so grow the buffer and ask again.
+                ERROR_MORE_DATA => {
+                    let needed = (size as usize).div_ceil(2);
+                    let len = needed.max(buffer.len() * 2);
+                    buffer.resize(len, 0);
+                }
+                _ => return Err(failed(status)),
+            }
         }
-        if status != ERROR_SUCCESS {
-            return Err(failed(status));
-        }
-        let mut buffer = vec![0u16; (size as usize).div_ceil(2)];
-        let mut size = (buffer.len() * 2) as u32;
-        // SAFETY: as above, and the buffer holds `size` bytes.
-        let status = unsafe {
-            RegGetValueW(
-                HKEY_CURRENT_USER,
-                key.as_ptr(),
-                name.as_ptr(),
-                RRF_RT_REG_SZ,
-                std::ptr::null_mut(),
-                buffer.as_mut_ptr().cast(),
-                &mut size,
-            )
-        };
-        if status == ERROR_FILE_NOT_FOUND {
-            return Ok(None);
-        }
-        if status != ERROR_SUCCESS {
-            return Err(failed(status));
-        }
-        let chars = (size as usize / 2).min(buffer.len());
-        let text = &buffer[..chars];
-        let end = text.iter().position(|&c| c == 0).unwrap_or(text.len());
-        Ok(Some(String::from_utf16_lossy(&text[..end])))
     }
 
     pub fn write(key: &str, name: &str, value: &str) -> io::Result<()> {
@@ -319,6 +377,28 @@ mod registry {
         // SAFETY: the name ends in a zero.
         unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, key.as_ptr()) };
     }
+
+    /// Writes a value of any type, from raw bytes. Tests use it to make
+    /// entries that `write` never makes.
+    #[cfg(test)]
+    pub fn write_raw(key: &str, name: &str, kind: u32, data: &[u8]) -> io::Result<()> {
+        let (key, name) = (wide(key), wide(name));
+        // SAFETY: both names end in a zero, and `data` holds `data.len()` bytes.
+        let status = unsafe {
+            windows_sys::Win32::System::Registry::RegSetKeyValueW(
+                HKEY_CURRENT_USER,
+                key.as_ptr(),
+                name.as_ptr(),
+                kind,
+                data.as_ptr().cast(),
+                data.len() as u32,
+            )
+        };
+        if status != ERROR_SUCCESS {
+            return Err(failed(status));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -347,6 +427,57 @@ mod tests {
         assert!(text.contains("<string>com.github.mattbran87.jev-tray</string>"));
         assert!(text.contains("<string>/Applications/jev &amp; co/jev-tray</string>"));
         assert!(text.contains("<key>RunAtLoad</key>\n\t<true/>"));
+        assert_well_formed(&text);
+    }
+
+    #[test]
+    fn the_plist_escapes_markup_and_keeps_other_text() {
+        let text = plist_text(Path::new("/Apps/a<b>&\"c\" é ü 日本/jev-tray"));
+        assert!(text.contains("<string>/Apps/a&lt;b&gt;&amp;\"c\" é ü 日本/jev-tray</string>"));
+        assert_well_formed(&text);
+    }
+
+    /// Enough of an XML check for the plist: every `&` starts an entity,
+    /// every `<` starts a tag, and the tags nest with one root.
+    fn assert_well_formed(text: &str) {
+        let mut open: Vec<&str> = Vec::new();
+        let mut roots = 0;
+        let mut rest = text;
+        while let Some(at) = rest.find(['<', '&']) {
+            let content = &rest[..at];
+            assert!(!content.contains('>'), "a bare > in {content:?}");
+            rest = &rest[at..];
+            if rest.starts_with('&') {
+                let end = rest.find(';').expect("an entity ends in ;");
+                let entity = &rest[1..end];
+                assert!(
+                    ["amp", "lt", "gt", "quot", "apos"].contains(&entity),
+                    "unknown entity {entity:?}"
+                );
+                rest = &rest[end + 1..];
+                continue;
+            }
+            let end = rest.find('>').expect("a tag ends in >");
+            let tag = &rest[1..end];
+            rest = &rest[end + 1..];
+            assert!(!tag.contains('<'), "a < inside the tag {tag:?}");
+            if tag.starts_with('?') || tag.starts_with('!') {
+                continue;
+            }
+            if let Some(name) = tag.strip_prefix('/') {
+                assert_eq!(open.pop(), Some(name), "a close tag out of order");
+            } else {
+                if open.is_empty() {
+                    roots += 1;
+                }
+                if !tag.ends_with('/') {
+                    open.push(tag.split(' ').next().unwrap());
+                }
+            }
+        }
+        assert!(!rest.contains('>'), "a bare > at the end");
+        assert!(open.is_empty(), "unclosed tags {open:?}");
+        assert_eq!(roots, 1, "one root element");
     }
 
     #[test]
@@ -363,6 +494,8 @@ mod tests {
         assert_eq!(exec_quote("/a/$x"), r#""/a/\\$x""#);
         assert_eq!(exec_quote("/a/100%"), r#""/a/100%%""#);
         assert_eq!(exec_quote(r"/a\b"), r#""/a\\\\b""#);
+        assert_eq!(exec_quote("/a/\"b\""), r#""/a/\\"b\\"""#);
+        assert_eq!(exec_quote("/a/`b`"), r#""/a/\\`b\\`""#);
     }
 
     /// Unix only: `/x/conf` is not an absolute path on Windows.
@@ -390,6 +523,11 @@ mod tests {
             Some(PathBuf::from("/home/u").join(".config").join("autostart"))
         );
         assert_eq!(autostart_dir(env(&[])), None);
+        assert_eq!(autostart_dir(env(&[("HOME", "home/u")])), None);
+        assert_eq!(
+            autostart_dir(env(&[("XDG_CONFIG_HOME", "conf"), ("HOME", "home/u")])),
+            None
+        );
     }
 
     /// The file entries are plain files, so this runs on every system.
@@ -430,6 +568,75 @@ mod tests {
         assert!(login.is_on().unwrap(), "another path still counts as on");
         login.write(&exe()).unwrap();
         assert_eq!(login.read().unwrap(), Some(plist_text(&exe())));
+        let mut temp = login_file(&login).as_os_str().to_owned();
+        temp.push(".tmp");
+        assert!(!Path::new(&temp).exists(), "no temp file is left");
+    }
+
+    fn login_file(login: &Login) -> &Path {
+        match login {
+            Login::LaunchAgent(file) | Login::Autostart(file) => file,
+            #[cfg(windows)]
+            Login::Run { .. } => unreachable!(),
+        }
+    }
+
+    /// Spec 4: any entry that exists counts as on, even one that is not text.
+    #[test]
+    fn a_file_entry_that_is_not_utf8_is_on() {
+        let home = tempfile::tempdir().unwrap();
+        for login in [
+            Login::launch_agent(home.path()),
+            Login::Autostart(home.path().join(".config/autostart/jev-tray.desktop")),
+        ] {
+            let file = login_file(&login);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, b"\xff\xfe[Desktop Entry]\n\x80").unwrap();
+            assert!(login.is_on().unwrap());
+            login.delete().unwrap();
+            assert!(!login.is_on().unwrap());
+        }
+    }
+
+    fn assert_invalid_input(result: io::Result<()>) {
+        match result {
+            Err(error) => assert_eq!(error.kind(), io::ErrorKind::InvalidInput),
+            Ok(()) => panic!("the write did not refuse the path"),
+        }
+    }
+
+    #[test]
+    fn a_file_entry_refuses_a_path_with_a_control_character() {
+        let home = tempfile::tempdir().unwrap();
+        for login in [
+            Login::launch_agent(home.path()),
+            Login::Autostart(home.path().join(".config/autostart/jev-tray.desktop")),
+        ] {
+            for bad in [
+                "/opt/a\nb/jev-tray",
+                "/opt/a\rb/jev-tray",
+                "/opt/a\tb/jev-tray",
+            ] {
+                assert_invalid_input(login.write(Path::new(bad)));
+                assert!(!login.is_on().unwrap());
+                assert!(!login_file(&login).parent().unwrap().exists());
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_entry_refuses_a_path_that_is_not_utf8() {
+        use std::os::unix::ffi::OsStrExt;
+        let home = tempfile::tempdir().unwrap();
+        let bad = Path::new(std::ffi::OsStr::from_bytes(b"/opt/\xff/jev-tray"));
+        for login in [
+            Login::launch_agent(home.path()),
+            Login::Autostart(home.path().join(".config/autostart/jev-tray.desktop")),
+        ] {
+            assert_invalid_input(login.write(bad));
+            assert!(!login.is_on().unwrap());
+        }
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -464,22 +671,39 @@ mod tests {
         );
     }
 
-    /// Uses a test key, never the real `Run` key.
+    /// A registry key of its own for one test, under `HKEY_CURRENT_USER`,
+    /// never the real `Run` key. It is deleted before the test and after it.
+    #[cfg(windows)]
+    struct TestKey(String);
+
+    #[cfg(windows)]
+    impl TestKey {
+        fn new(test: &str) -> TestKey {
+            let key = format!(r"Software\jev-tray-test-{}-{test}", std::process::id());
+            registry::delete_tree(&key);
+            TestKey(key)
+        }
+
+        fn login(&self) -> Login {
+            Login::Run {
+                key: format!(r"{}\Run", self.0),
+                name: NAME.to_string(),
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    impl Drop for TestKey {
+        fn drop(&mut self) {
+            registry::delete_tree(&self.0);
+        }
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_registry_entry_is_written_read_and_deleted() {
-        const TEST_KEY: &str = r"Software\jev-tray-test";
-        struct Cleanup;
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                registry::delete_tree(TEST_KEY);
-            }
-        }
-        let _cleanup = Cleanup;
-        let login = Login::Run {
-            key: format!(r"{TEST_KEY}\Run"),
-            name: NAME.to_string(),
-        };
+        let key = TestKey::new("entry");
+        let login = key.login();
         assert!(!login.is_on().unwrap());
         login.delete().unwrap();
         login.write(Path::new("/old/jev-tray.exe")).unwrap();
@@ -491,5 +715,41 @@ mod tests {
         );
         login.delete().unwrap();
         assert!(!login.is_on().unwrap());
+    }
+
+    /// Spec 4: any `jev-tray` value counts as on, whatever its type.
+    #[cfg(windows)]
+    #[test]
+    fn a_registry_entry_of_another_type_is_on() {
+        use windows_sys::Win32::System::Registry::{REG_BINARY, REG_EXPAND_SZ};
+        let key = TestKey::new("types");
+        let login = key.login();
+        let Login::Run { key: run, name } = &login else {
+            unreachable!()
+        };
+        let expand: Vec<u8> = "\"%LOCALAPPDATA%\\jev\\jev-tray.exe\"\0"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        for (kind, data) in [
+            (REG_BINARY, &[0xff, 0xfe, 0x00][..]),
+            (REG_EXPAND_SZ, &expand[..]),
+        ] {
+            registry::write_raw(run, name, kind, data).unwrap();
+            assert!(login.is_on().unwrap(), "type {kind}");
+            login.delete().unwrap();
+            assert!(!login.is_on().unwrap());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_registry_entry_refuses_a_path_with_a_control_character() {
+        let key = TestKey::new("control");
+        let login = key.login();
+        for bad in ["C:\\a\nb\\jev-tray.exe", "C:\\a\rb\\jev-tray.exe"] {
+            assert_invalid_input(login.write(Path::new(bad)));
+            assert!(!login.is_on().unwrap());
+        }
     }
 }
