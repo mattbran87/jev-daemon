@@ -1,10 +1,8 @@
 //! The real `jev` binary, with the real `jevd` next to it in the target
 //! folder, under a new `JEV_HOME`. No command here touches the keyring.
 //!
-//! These tests need `jevd` built first: `cargo test --workspace` builds it,
-//! and `cargo test -p jev` alone does not, so run `cargo build -p jevd`
-//! first. Without it, the tests that start a daemon fail at once with
-//! "jevd... is missing".
+//! The `jev` package owns both binaries, so cargo builds `jevd` for these
+//! tests, next to `jev`, as a release archive holds them.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -17,15 +15,16 @@ use jev_proto::Paths;
 use serde_json::Value;
 
 const JEV: &str = env!("CARGO_BIN_EXE_jev");
+const JEVD: &str = env!("CARGO_BIN_EXE_jevd");
 /// How long one `jev` command may take, with its pipes closed.
 const DEADLINE: Duration = Duration::from_secs(30);
 
 fn jevd_next_to_jev() -> PathBuf {
-    let jevd = Path::new(JEV).with_file_name(format!("jevd{}", std::env::consts::EXE_SUFFIX));
-    assert!(
-        jevd.exists(),
-        "{} is missing; run cargo build -p jevd (cargo test --workspace builds it)",
-        jevd.display()
+    let jevd = PathBuf::from(JEVD);
+    assert_eq!(
+        jevd.parent(),
+        Path::new(JEV).parent(),
+        "cargo puts jevd next to jev"
     );
     jevd
 }
