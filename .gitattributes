@@ -1,0 +1,3 @@
+*.png binary
+*.sh  text eol=lf
+*.svg text eol=lf
