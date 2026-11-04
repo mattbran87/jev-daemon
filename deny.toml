@@ -35,7 +35,6 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "CC0-1.0",
-    "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
     "MIT-0",
@@ -47,6 +46,8 @@ confidence-threshold = 0.93
 [bans]
 # Two versions of one crate (windows-sys, for example) are common and not a defect.
 multiple-versions = "warn"
+# The binaries use rustls and must not pull in OpenSSL.
+deny = [{ name = "openssl-sys" }, { name = "openssl" }]
 wildcards = "deny"
 allow-wildcard-paths = true
 
