@@ -3,3 +3,4 @@
 /.claude/settings.local.json
 # Claude Code writes this folder when it loads the mod.
 /plugins/claude-code/.claude-plugin/types/
+node_modules/

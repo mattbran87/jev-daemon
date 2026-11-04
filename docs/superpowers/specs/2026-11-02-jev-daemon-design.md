@@ -359,7 +359,8 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 | Linux | glibc (`gnu`) builds on `ubuntu-22.04` and `ubuntu-22.04-arm`, so they need glibc 2.35 or newer. No musl build in v1. Every target builds on a native runner. |
 | crates.io | Nothing is published in v1. |
 | Pull requests | The release workflow builds every archive on a pull request and uploads them to the run, with no release (`pr-run-mode = "upload"`). |
-| Action pins | `[dist.github-action-commits]` in `dist-workspace.toml` pins each action of the release workflow to a commit, `swatinem/rust-cache` too. One exception: the workflow downloads the `dist` binary by its version, with no hash check. `dist` has no setting for a hash. |
+| Action pins | `[dist.github-action-commits]` in `dist-workspace.toml` pins each action of the release workflow to a commit, `swatinem/rust-cache` too. One exception: the workflow downloads the `dist` binary by its version, with no hash check. `dist` has no setting for a hash. The release workflow can also run rustup's installer by `curl` when a runner has no Rust (none of GitHub's runners do). That is a second unpinned download, like the `dist` one. |
+| Token | The generated `release.yml` gives the whole workflow `contents: write`, pull request runs included. `dist` sets this. So a branch in this repo gets a write token in its pull request runs. Fork pull requests do not. |
 | Signing | None paid in v1. The macOS binaries are not signed or notarized. The Apple Silicon build gets the linker's ad hoc signature. The shell and PowerShell installers are the supported way to install. On macOS, a binary from a browser download needs `xattr -d com.apple.quarantine` before it runs. On Windows, it gets a SmartScreen warning. |
 | Versions | One version for the crates and the plugin. The protocol version changes only with the wire format. A new error code changes the protocol version only if an older client would act wrongly when it treats the code as unknown. First tag `v0.1.0`. |
 | Plugin | A marketplace file at the repo root |
@@ -373,8 +374,8 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 - The `deny` job runs 2 checks: `advisories`, and `bans licenses sources`. A new advisory can appear with no change in the repo. So on a pull request, a failed `advisories` step does not fail the job. On `main`, it fails the job.
 - `.github/workflows/advisories.yml` runs `cargo deny check advisories` each day, and fails when a new advisory appears. GitHub turns off a scheduled workflow after 60 days with no repo activity.
 - `deny.toml` bans `openssl` and `openssl-sys`, because the binaries use rustls.
-- On a pull request, a newer push cancels the CI run that is still going. On `main`, every commit keeps its run.
-- Every action pinned to a commit SHA, in both workflows. `Cargo.lock` committed.
+- On a pull request, a newer push cancels the CI run that is still going. On `main`, each commit gets its own concurrency group (`github.sha`), so no run cancels another.
+- Every action pinned to a commit SHA, in every workflow. `Cargo.lock` committed.
 - A test in `crates/jev/tests/versions.rs` checks that the plugin's version is the crates' version, and that the mod's `MIN_JEV` is no newer.
 
 ## 9. Docs

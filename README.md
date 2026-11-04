@@ -18,6 +18,17 @@ cargo install --locked --git https://github.com/mattbran87/jev-daemon jev
 
 That installs `jev` and `jevd` into the same folder, `~/.cargo/bin`. `jevd` accepts admin commands only from the `jev` next to it, so keep the two together.
 
+## Claude Code plugin
+
+Add the marketplace, then install the plugin. Run these in Claude Code:
+
+```
+/plugin marketplace add mattbran87/jev-daemon
+/plugin install jev-daemon@jev-daemon
+```
+
+The plugin needs `jev` on your `PATH`. Install it first (see above).
+
 ## Design
 
 The design is in [docs/superpowers/specs/2026-11-02-jev-daemon-design.md](docs/superpowers/specs/2026-11-02-jev-daemon-design.md).
