@@ -9,6 +9,13 @@ repository.workspace = true
 
 [dependencies]
 jev-proto = { version = "0.1.0", path = "../jev-proto" }
+png = "0.18"
+# tray-icon 0.25 and later need Rust 1.90; the workspace MSRV is 1.85.
+tao = "0.37.1"
+tray-icon = "0.24.2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Registry"] }

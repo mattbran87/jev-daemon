@@ -105,6 +105,48 @@ pub fn png(state: State, shade: Shade, size: u32) -> &'static [u8] {
     files[index]
 }
 
+/// The pixels of one decoded icon, 4 bytes per pixel (red, green, blue,
+/// alpha), row by row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rgba {
+    pub pixels: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Decodes PNG bytes to 8-bit RGBA, the form a tray icon takes.
+pub fn rgba(png_bytes: &[u8]) -> Result<Rgba, String> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().map_err(|error| error.to_string())?;
+    let size = reader
+        .output_buffer_size()
+        .ok_or_else(|| "the image is too large".to_string())?;
+    let mut buffer = vec![0; size];
+    let info = reader
+        .next_frame(&mut buffer)
+        .map_err(|error| error.to_string())?;
+    let data = &buffer[..info.buffer_size()];
+    let pixels = match info.color_type {
+        png::ColorType::Rgba => data.to_vec(),
+        png::ColorType::Rgb => data
+            .chunks_exact(3)
+            .flat_map(|p| [p[0], p[1], p[2], 255])
+            .collect(),
+        png::ColorType::GrayscaleAlpha => data
+            .chunks_exact(2)
+            .flat_map(|p| [p[0], p[0], p[0], p[1]])
+            .collect(),
+        png::ColorType::Grayscale => data.iter().flat_map(|&g| [g, g, g, 255]).collect(),
+        png::ColorType::Indexed => return Err("an indexed image was not expanded".to_string()),
+    };
+    Ok(Rgba {
+        pixels,
+        width: info.width,
+        height: info.height,
+    })
+}
+
 /// Reads the taskbar theme. Not unit-tested: it reads the real registry.
 #[cfg(windows)]
 mod windows_theme {
@@ -214,5 +256,27 @@ mod tests {
             png(State::Off, Shade::White, 48),
             include_bytes!("../icons/off-white-48.png")
         );
+    }
+
+    #[test]
+    fn every_icon_decodes_in_its_own_color() {
+        for state in [State::On, State::Off] {
+            for (shade, value) in [(Shade::Black, 0), (Shade::White, 255)] {
+                for size in SIZES {
+                    let image = rgba(png(state, shade, size)).unwrap();
+                    assert_eq!((image.width, image.height), (size, size));
+                    assert_eq!(image.pixels.len(), (size * size * 4) as usize);
+                    let solid: Vec<&[u8]> = image
+                        .pixels
+                        .chunks_exact(4)
+                        .filter(|pixel| pixel[3] == 255)
+                        .collect();
+                    assert!(!solid.is_empty(), "{state:?} {shade:?} {size}");
+                    for pixel in solid {
+                        assert_eq!(&pixel[..3], &[value; 3], "{state:?} {shade:?} {size}");
+                    }
+                }
+            }
+        }
     }
 }
