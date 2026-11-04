@@ -7,6 +7,12 @@
 # Pass the tool's path as the first argument when it is not on PATH.
 set -eu
 resvg=${1:-resvg}
+# The script changes folder below, so make a relative tool path absolute.
+# A PATH name (no slash) and a Windows drive path (C:/...) stay as they are.
+case $resvg in
+  /* | [A-Za-z]:*) ;;
+  */* | *\\*) resvg="$(pwd)/$resvg" ;;
+esac
 version=$("$resvg" --version 2>/dev/null | tr -d '\r') || version=
 if [ "$version" != "0.48.1" ]; then
   echo "need resvg 0.48.1, found: ${version:-none}" >&2
@@ -14,7 +20,8 @@ if [ "$version" != "0.48.1" ]; then
 fi
 cd "$(dirname "$0")"
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' INT TERM
 for state in on off; do
   for color in black white; do
     case $color in
