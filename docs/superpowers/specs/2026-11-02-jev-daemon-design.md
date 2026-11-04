@@ -50,8 +50,8 @@ The Python prototype, jev-service, stays private. It serves as the reference for
 | Path | Kind | Job |
 | --- | --- | --- |
 | `crates/jev-proto` | library | Wire types, the protocol version, and a small client that connects and starts `jevd` when needed. No tokio or reqwest dependency. |
-| `crates/jevd` | library and binary | Socket server, pairing store, checks, keyring read, Jev HTTPS client |
-| `crates/jev` | binary | The CLI |
+| `crates/jevd` | library | Socket server, pairing store, checks, keyring read, Jev HTTPS client. Its binary is built from the `jev` package. |
+| `crates/jev` | library and the binaries jev and jevd | The CLI, and the `jevd` binary (`src/bin/jevd.rs`), so one release archive holds both. |
 | `plugins/claude-code` | TypeScript mod | `$.jev` for other mods, and toasts |
 
 ### Storage
@@ -352,20 +352,30 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 
 | Item | Design |
 | --- | --- |
-| Tool | `dist`, run by a GitHub Actions workflow on each version tag |
+| Tool | `dist` 0.33.1, run by `.github/workflows/release.yml` on each version tag. Its settings sit in `dist-workspace.toml`; `dist generate` writes the workflow. |
 | Targets | `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin`, `x86_64-apple-darwin` |
-| Archive | `jev` and `jevd` together, so they land in the same folder. The peer check depends on that. |
-| Installers | Shell and PowerShell, from `dist`. `cargo install` also works. |
-| Signing | None paid in v1. Apple Silicon builds get the linker's ad hoc signature. |
+| Archive | One app, the `jev` package, owns both binaries, so each archive holds `jev` and `jevd` in one folder. The peer check depends on that. |
+| Installers | Shell and PowerShell, from `dist`. They install both binaries into `$CARGO_HOME/bin`. `cargo install --locked --git https://github.com/mattbran87/jev-daemon jev` also works and installs both. |
+| Linux | glibc (`gnu`) builds on `ubuntu-22.04` and `ubuntu-22.04-arm`, so they need glibc 2.35 or newer. No musl build in v1. Every target builds on a native runner. |
+| crates.io | Nothing is published in v1. |
+| Pull requests | The release workflow builds every archive on a pull request and uploads them to the run, with no release (`pr-run-mode = "upload"`). |
+| Action pins | `[dist.github-action-commits]` in `dist-workspace.toml` pins each action of the release workflow to a commit, `swatinem/rust-cache` too. One exception: the workflow downloads the `dist` binary by its version, with no hash check. `dist` has no setting for a hash. |
+| Signing | None paid in v1. The macOS binaries are not signed or notarized. The Apple Silicon build gets the linker's ad hoc signature. The shell and PowerShell installers are the supported way to install. On macOS, a binary from a browser download needs `xattr -d com.apple.quarantine` before it runs. On Windows, it gets a SmartScreen warning. |
 | Versions | One version for the crates and the plugin. The protocol version changes only with the wire format. A new error code changes the protocol version only if an older client would act wrongly when it treats the code as unknown. First tag `v0.1.0`. |
 | Plugin | A marketplace file at the repo root |
 
 ### CI on each push and pull request
 
-- Windows, Linux, and macOS: `cargo fmt --check`, `cargo clippy` with warnings as errors, `cargo test --locked`.
-- The mod: `tsc` and the mod tests.
-- `cargo deny` for licenses and security advisories.
-- Every action pinned to a commit SHA. `Cargo.lock` committed.
+- Windows, Linux, and macOS: `cargo fmt --check`, `cargo clippy` with warnings as errors, `cargo test --locked`, on Rust 1.99.1. CI pins its toolchain, so a new Rust release cannot fail a commit that passed.
+- The MSRV, Rust 1.85: `cargo check --workspace --locked`, with no test targets, because `wiremock`, a test-only dependency, needs Rust 1.88.
+- The mod, on the 3 systems, with Claude Code 2.1.300: `claude plugin validate` on the marketplace and the plugin, and `claude plugin test`. `tsc` runs locally only: `/plugin-types` works only in an interactive session, and its file is Claude Code's own text, so the repo does not hold it.
+- `cargo deny` for licenses, security advisories, bans, and sources, with `deny.toml`. It ignores 3 "unmaintained" notices for the `zbus` 4 crates (RUSTSEC-2026-0370, -0371, -0372), each with its reason, until the MSRV allows `keyring` 4.
+- The `deny` job runs 2 checks: `advisories`, and `bans licenses sources`. A new advisory can appear with no change in the repo. So on a pull request, a failed `advisories` step does not fail the job. On `main`, it fails the job.
+- `.github/workflows/advisories.yml` runs `cargo deny check advisories` each day, and fails when a new advisory appears. GitHub turns off a scheduled workflow after 60 days with no repo activity.
+- `deny.toml` bans `openssl` and `openssl-sys`, because the binaries use rustls.
+- On a pull request, a newer push cancels the CI run that is still going. On `main`, every commit keeps its run.
+- Every action pinned to a commit SHA, in both workflows. `Cargo.lock` committed.
+- A test in `crates/jev/tests/versions.rs` checks that the plugin's version is the crates' version, and that the mod's `MIN_JEV` is no newer.
 
 ## 9. Docs
 
@@ -405,7 +415,7 @@ jev does not protect against malware that runs as the same user. Such code can r
 - Any process of the user can run `jev ask --client cc-<plugin>` and use that plugin's pairing, as the first bullet says for every CLI client.
 - Redaction uses patterns, so a secret with an unknown shape gets through.
 - Extra fields in Jev's answer reach the client. The answer check tests the fields it reads, not the absence of others.
-- Without paid signing, Windows SmartScreen warns on first run, and the macOS Keychain can ask again for `jevd`'s access after each update.
+- Without paid signing, Windows SmartScreen warns on first run, and the macOS Keychain can ask again for `jevd`'s access after each update. The cause is the ad hoc signature, which changes with each build.
 - On a domain-joined Windows machine with roaming profiles, Credential Manager can copy jev's keys and client tokens to other machines where the same user signs in. The `keyring` crate stores them with `CRED_PERSIST_ENTERPRISE`.
 - `jevd` uses the system and environment proxy settings. A proxy cannot read the key over HTTPS, but a TLS-inspecting proxy whose root certificate the OS trusts can.
 - `jevd` matches a peer by its process ID. An ID that the OS reuses at once after its process ends can match the wrong process, for a few milliseconds.
@@ -475,11 +485,11 @@ jev does not protect against malware that runs as the same user. Such code can r
 
 These items need a check before the plan fixes the design that depends on them:
 
-- **Linux keyring backend.** Done in plan 2: `keyring` 3.6 with `async-secret-service`, `crypto-rust`, and `async-io`. It uses the pure-Rust `zbus`, so the build needs no system `libdbus` and no OpenSSL. `keyring` 4 needs Rust 1.88, above the MSRV. TLS uses `reqwest`'s `rustls` with `aws-lc-rs`, whose `aws-lc-sys` compiles C code, so plan 6 still picks between a `gnu` and a static `musl` build. The Linux and macOS cross-check passed for the keyring code before `reqwest` came in; on the final tree, a cross-check needs a C cross compiler or a scratch copy with `reqwest`'s `rustls-no-provider` feature, and plan 6's CI is the real check.
-- **Crate names.** Checked on 2026-11-02: `jevd` and `jev-proto` are free on crates.io, and `jev` is taken. Plan 6 decides the published name of the CLI crate. The binary can stay `jev`.
+- **Linux keyring backend.** Done in plan 2: `keyring` 3.6 with `async-secret-service`, `crypto-rust`, and `async-io`. It uses the pure-Rust `zbus`, so the build needs no system `libdbus` and no OpenSSL. `keyring` 4 needs Rust 1.88, above the MSRV. TLS uses `reqwest`'s `rustls` with `aws-lc-rs`, whose `aws-lc-sys` compiles C code. Plan 6 picked a glibc build on native runners, so the build needs no cross compiler.
+- **Crate names.** Checked on 2026-11-02: `jevd` and `jev-proto` are free on crates.io, and `jev` is taken. Plan 6 decides the published name of the CLI crate. The binary can stay `jev`. Plan 6 publishes nothing in v1, so it claims no name yet. If a later release publishes, `jevctl` is free for the CLI crate (checked 2026-11-04), and the binary stays `jev`.
 - **Windows pipe access list.** Done in plan 3: tokio's `ServerOptions::create_with_security_attributes_raw` with a descriptor from the SDDL `O:<SID>D:P(A;;GA;;;<SID>)`, built with `windows-sys`. No `interprocess` crate.
 - **TypeSafe key check.** Checked in plan 4: TypeSafe documents no key-check endpoint. `jev key add --check` spends one request, and only when the person asks for it.
-- **Rate limit default.** Measure the busiest real client, such as jev-adhd, and check TypeSafe's pricing and server limits. Keep or change `120/60` before the first release.
+- **Rate limit default.** Measure the busiest real client, such as jev-adhd, and check TypeSafe's pricing and server limits. Keep or change `120/60` before the first release. Release v0.1.0 keeps `120/60`. The measurement stays open for a later release.
 - **Mod socket access.** The mod spawns the CLI because no test so far shows that the mod API can open a Unix socket or a named pipe. Leave this as is unless a check proves otherwise.
 
 ## Out of scope for v1

@@ -59,6 +59,11 @@ These facts come from runs on this machine on 2026-11-04.
 | `actions/download-artifact` | v8.0.2 | `9000827ccba6bdab643e8b6fd33ac0654aef8333` |
 | `Swatinem/rust-cache` | v2.9.3 | `d1527c8f67ef9af357290475d4af4b0fab8f12e0` |
 | `EmbarkStudios/cargo-deny-action` | v2.1.1 | `3c6349835b2b7b196a839186cb8b78e02f7b5f25` |
+| `swatinem/rust-cache` (release, through `dist`) | v2.9.3 | `d1527c8f67ef9af357290475d4af4b0fab8f12e0` |
+
+The `release.yml` from `dist` with that pin has sha256 `8df2689683e598a1d74bececfb00e52b94abe0078cd3d0bef2f7a539a7fca4db`. It replaces the hash in Task 5 Step 3: `dist` adds `rust-cache`, which the first draft missed.
+
+- Code reviews in Tasks 1 to 5 changed details after the first draft: the advisory split and the daily run, the `openssl` ban, explicit `[[bin]]` entries and tokio features in `crates/jev/Cargo.toml`, and more tests in `versions.rs`. The spec is the current record.
 
 - `dist` installs both binaries into `$CARGO_HOME/bin`, the same folder `cargo install` uses, so the peer check holds either way.
 - A pull request runs the release workflow in `upload` mode: it builds every archive and uploads them to the run, with no release. Task 7 uses this to check the release build.
@@ -744,5 +749,10 @@ Write the run IDs, the checks, and any fixes in your report. Nothing to commit, 
 ## Notes for the next plans
 
 - The docs plan (spec section 9) writes `install.md` with the installer commands and the SmartScreen and Keychain warnings.
+- A third-party license notices file in every archive, for example from `cargo about generate`, added through `dist`'s `include`. The MIT, Apache, BSD, ISC, and Unicode licenses of the dependencies need it.
+- A tag ruleset on GitHub, so only maintainers push `v*` tags.
+- macOS signing and notarization, in a later release.
+- Fix the 5 rustdoc "unclosed HTML tag" warnings in the `jev` library docs before CI runs `cargo doc`.
+- `cargo deny check` prints 10 duplicate-version warnings on `e6198d7` (a review counted 11), not the 1 that Task 3 expects.
 - Before the tag: the docs, a `CHANGELOG.md` entry for 0.1.0 (`dist` uses it for the release notes), and the person's go-ahead.
 - When the MSRV reaches 1.88: `keyring` 4, and drop the 3 ignored advisories in `deny.toml`.
