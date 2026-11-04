@@ -1,0 +1,16 @@
+[package]
+name = "jev-tray"
+description = "A tray icon that shows whether jevd runs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+jev-proto = { version = "0.1.0", path = "../jev-proto" }
+
+[dev-dependencies]
+jevd = { version = "0.1.0", path = "../jevd" }
+tempfile = "3"
+tokio = { version = "1", features = ["io-util", "macros", "rt-multi-thread", "time"] }

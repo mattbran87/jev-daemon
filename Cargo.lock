@@ -1160,6 +1160,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "jev-tray"
+version = "0.1.0"
+dependencies = [
+ "jev-proto",
+ "jevd",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "jevd"
 version = "0.1.0"
 dependencies = [
