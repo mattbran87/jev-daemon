@@ -2,4 +2,5 @@
 //! icon choice, and the login entry (the jev-tray spec).
 
 pub mod icon;
+pub mod login;
 pub mod state;
