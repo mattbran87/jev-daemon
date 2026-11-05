@@ -1,11 +1,14 @@
 //! The tray program: one tray icon that shows whether `jevd` runs (the
 //! jev-tray spec). A worker thread checks every 5 seconds and sends each
 //! result to the event loop, which changes the icon and tooltip only on a
-//! change. The `jev-tray` binary of the `jev` package calls [`run`].
+//! change. The menu's first item runs `jev start` or `jev stop` (the Start
+//! and Stop spec). The `jev-tray` binary of the `jev` package calls [`run`].
 
 use std::path::Path;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::Instant;
 
+use crate::control::{self, Action, RUN_LIMIT};
 use crate::icon::{self, Shade};
 use crate::login::Login;
 use crate::one_copy;
@@ -22,6 +25,11 @@ enum Message {
     Checked { state: State, shade: Shade },
     /// A click on a menu item.
     Menu(MenuEvent),
+    /// The end of `jev start` or `jev stop`.
+    Ran {
+        action: Action,
+        result: Result<(), String>,
+    },
 }
 
 /// The icon in the tray, and what it shows now.
@@ -120,8 +128,9 @@ fn show_error(message: &str) {
 #[cfg(not(windows))]
 fn show_error(_message: &str) {}
 
-/// Checks every 5 seconds, until the event loop is gone.
-fn watch(paths: Paths, proxy: EventLoopProxy<Message>) {
+/// Checks every 5 seconds, and at once on a message from `wake`, until the
+/// event loop is gone.
+fn watch(paths: Paths, proxy: EventLoopProxy<Message>, wake: Receiver<()>) {
     // One checker for the whole loop, so a check that hangs cannot make
     // each later check add one more thread.
     let mut checker = Checker::new();
@@ -135,7 +144,28 @@ fn watch(paths: Paths, proxy: EventLoopProxy<Message>) {
         if proxy.send_event(message).is_err() {
             return;
         }
-        std::thread::sleep(CHECK_LIMIT.saturating_sub(started.elapsed()));
+        match wake.recv_timeout(CHECK_LIMIT.saturating_sub(started.elapsed())) {
+            Ok(()) | Err(RecvTimeoutError::Timeout) => {}
+            // The event loop is gone.
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+    }
+}
+
+/// Runs `action` on its own thread, and sends the result to the event loop.
+fn start_action(action: Action, proxy: &EventLoopProxy<Message>) {
+    let sender = proxy.clone();
+    let spawned = std::thread::Builder::new()
+        .name("jev-tray-control".into())
+        .spawn(move || {
+            let result = std::env::current_exe()
+                .map_err(|error| error.to_string())
+                .and_then(|exe| control::run_action(action, &exe, RUN_LIMIT));
+            let _ = sender.send_event(Message::Ran { action, result });
+        });
+    if let Err(error) = spawned {
+        let result = Err(format!("cannot start a thread: {error}"));
+        let _ = proxy.send_event(Message::Ran { action, result });
     }
 }
 
@@ -196,10 +226,12 @@ pub fn run() {
             false
         }
     };
+    // The state is off until the first check, so the label starts as Start.
+    let control_item = MenuItem::new(Action::Start.label(), true, None);
     let login_item = CheckMenuItem::new("Start at login", true, login_on, None);
     let quit_item = MenuItem::new("Quit", true, None);
     let menu = Menu::new();
-    menu.append_items(&[&login_item, &quit_item])
+    menu.append_items(&[&control_item, &login_item, &quit_item])
         .unwrap_or_else(|error| fail(log, &format!("cannot build the menu: {error}")));
     let mut menu = Some(menu);
 
@@ -208,12 +240,19 @@ pub fn run() {
         let _ = proxy.send_event(Message::Menu(event));
     }));
     let proxy = event_loop.create_proxy();
+    let (wake, woken) = mpsc::channel();
     std::thread::Builder::new()
         .name("jev-tray-watch".into())
-        .spawn(move || watch(paths, proxy))
+        .spawn(move || watch(paths, proxy, woken))
         .unwrap_or_else(|error| fail(log, &format!("cannot start the check thread: {error}")));
+    let proxy = event_loop.create_proxy();
 
     let mut tray: Option<Tray> = None;
+    // True while `jev start` or `jev stop` runs.
+    let mut running = false;
+    // A failed Start or Stop, with the state at that time. It shows until
+    // the state changes or the next click on the item.
+    let mut failure: Option<(String, State)> = None;
     event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
@@ -223,7 +262,9 @@ pub fn run() {
                 let text = state::tooltip(state, None);
                 let mut builder = TrayIconBuilder::new()
                     .with_tooltip(&text)
-                    .with_icon_as_template(icon::TEMPLATE);
+                    .with_icon_as_template(icon::TEMPLATE)
+                    // Any click opens the menu, whatever the default.
+                    .with_menu_on_left_click(true);
                 if let Some(menu) = menu.take() {
                     builder = builder.with_menu(Box::new(menu));
                 }
@@ -248,18 +289,51 @@ pub fn run() {
             }
             Event::UserEvent(Message::Checked { state, shade }) => {
                 if let Some(tray) = tray.as_mut() {
+                    if failure.as_ref().is_some_and(|(_, at)| *at != state) {
+                        failure = None;
+                    }
                     // A new check ends the display of a login error.
-                    tray.show(state, shade, size_now(target), None);
+                    let line = failure.as_ref().map(|(line, _)| line.as_str());
+                    tray.show(state, shade, size_now(target), line);
+                    let label = Action::for_state(state).label();
+                    if control_item.text() != label {
+                        control_item.set_text(label);
+                    }
                 }
+            }
+            Event::UserEvent(Message::Ran { action, result }) => {
+                running = false;
+                control_item.set_enabled(true);
+                if let Err(error) = result {
+                    let line = format!("{} failed: {error}", action.label());
+                    note(Some(&log_dir), &line);
+                    if let Some(tray) = tray.as_mut() {
+                        let (_, shade, size) = tray.shown;
+                        let state = tray.state;
+                        tray.show(state, shade, size, Some(&line));
+                        failure = Some((line, state));
+                    }
+                }
+                // Check now, so the icon and the label follow at once.
+                let _ = wake.send(());
             }
             Event::UserEvent(Message::Menu(event)) => {
                 if event.id == *quit_item.id() {
                     // Drop the icon first, so Windows does not keep a ghost.
                     tray = None;
                     *control_flow = ControlFlow::Exit;
+                } else if event.id == *control_item.id() {
+                    if let (false, Some(tray)) = (running, tray.as_ref()) {
+                        running = true;
+                        control_item.set_enabled(false);
+                        failure = None;
+                        start_action(Action::for_state(tray.state), &proxy);
+                    }
                 } else if event.id == *login_item.id() {
                     if let Err(error) = apply_login(&login_item, &login) {
                         login_item.set_checked(!login_item.is_checked());
+                        // A login error replaces a failed Start or Stop.
+                        failure = None;
                         if let Some(tray) = tray.as_mut() {
                             let (_, shade, size) = tray.shown;
                             let state = tray.state;
