@@ -45,11 +45,7 @@ impl Tray {
         self.state = state;
         if (state, shade, size) != self.shown {
             if let Some(image) = image(state, shade, size) {
-                if self
-                    .icon
-                    .set_icon_with_as_template(Some(image), icon::TEMPLATE)
-                    .is_ok()
-                {
+                if set_image(&self.icon, image).is_ok() {
                     self.shown = (state, shade, size);
                 }
             }
@@ -59,6 +55,16 @@ impl Tray {
             self.tooltip = text;
         }
     }
+}
+
+/// Puts `image` in the tray. In tray-icon 0.24, `set_icon_with_as_template`
+/// changes the image on macOS only: on Windows and Linux it ignores the image
+/// and still returns `Ok`. So only macOS uses it, for the template flag.
+fn set_image(tray: &TrayIcon, image: Icon) -> tray_icon::Result<()> {
+    #[cfg(target_os = "macos")]
+    return tray.set_icon_with_as_template(Some(image), icon::TEMPLATE);
+    #[cfg(not(target_os = "macos"))]
+    tray.set_icon(Some(image))
 }
 
 fn image(state: State, shade: Shade, size: u32) -> Option<Icon> {
