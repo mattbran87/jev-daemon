@@ -38,7 +38,7 @@ struct Tray {
 impl Tray {
     /// Shows `state`, and changes the image or the tooltip only when it
     /// differs from what is on show.
-    fn show(&mut self, state: State, shade: Shade, size: u32, login_error: Option<&str>) {
+    fn show(&mut self, state: State, shade: Shade, size: u32, failure: Option<&str>) {
         self.state = state;
         if (state, shade, size) != self.shown {
             if let Some(image) = image(state, shade, size) {
@@ -47,7 +47,7 @@ impl Tray {
                 }
             }
         }
-        let text = state::tooltip(state, login_error);
+        let text = state::tooltip(state, failure);
         if text != self.tooltip && self.icon.set_tooltip(Some(&text)).is_ok() {
             self.tooltip = text;
         }
@@ -263,7 +263,8 @@ pub fn run() {
                         if let Some(tray) = tray.as_mut() {
                             let (_, shade, size) = tray.shown;
                             let state = tray.state;
-                            tray.show(state, shade, size, Some(&error));
+                            let line = format!("Start at login failed: {error}");
+                            tray.show(state, shade, size, Some(&line));
                         }
                     }
                 }
