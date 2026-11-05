@@ -23,6 +23,12 @@ ignore = [
     { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained; via keyring 3.6, Linux only" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained; via keyring 3.6, Linux only" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained; via keyring 3.6, Linux only" },
+    # proc-macro-error: an "unmaintained" notice, not a vulnerability. It is a
+    # build-time macro crate that reaches us on Linux only: jev-tray ->
+    # tray-icon 0.24 and tao -> gtk 0.18 -> glib-macros 0.18. tray-icon 0.25
+    # and later need Rust 1.90, above the 1.85 MSRV. Look again when the MSRV
+    # moves.
+    { id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained; via gtk 0.18 for jev-tray, Linux only, build time" },
 ]
 
 [licenses]
@@ -41,6 +47,13 @@ allow = [
     "Unlicense",
 ]
 confidence-threshold = 0.93
+# option-ext: MPL-2.0, a file-level copyleft. We use it unmodified, so it puts
+# no terms on our code. It reaches us on Linux only: jev-tray -> tray-icon 0.24
+# -> dirs 6 -> dirs-sys -> option-ext. Look again when the MSRV allows
+# tray-icon 0.25.
+[[licenses.exceptions]]
+crate = "option-ext"
+allow = ["MPL-2.0"]
 
 [bans]
 # Two versions of one crate (windows-sys, for example) are common and not a defect.

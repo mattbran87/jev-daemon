@@ -40,6 +40,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      - name: Install the jev-tray build packages
+        # jev-tray's tray library needs GTK 3 and an AppIndicator library on Linux.
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
       - name: Install Rust
         run: |
           rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt,clippy
@@ -61,6 +67,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      - name: Install the jev-tray build packages
+        # jev-tray's tray library needs GTK 3 and an AppIndicator library on Linux.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
       - name: Install Rust
         run: |
           rustup toolchain install "$MSRV" --profile minimal
