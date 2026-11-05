@@ -100,7 +100,11 @@ pub fn run(mut command: Command, limit: Duration) -> Result<(), String> {
                 return Err(format!("jev gave no answer in {} s", limit.as_secs()));
             }
             Ok(None) => std::thread::sleep(POLL),
-            Err(error) => return Err(error.to_string()),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.to_string());
+            }
         }
     };
     if status.success() {
