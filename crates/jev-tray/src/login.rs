@@ -106,12 +106,11 @@ impl Login {
     /// holds a control character, fails with `InvalidInput` and writes
     /// nothing: no entry could hold it whole.
     pub fn write(&self, exe: &Path) -> io::Result<()> {
-        let exe = storable(exe)?;
         match self {
-            Login::LaunchAgent(file) => write_file(file, &plist_text(Path::new(exe))),
-            Login::Autostart(file) => write_file(file, &desktop_text(Path::new(exe))),
+            Login::LaunchAgent(file) => write_file(file, &plist_text(Path::new(storable(exe)?))),
+            Login::Autostart(file) => write_file(file, &desktop_text(Path::new(storable(exe)?))),
             #[cfg(windows)]
-            Login::Run { key, name } => registry::write(key, name, &quoted(exe)),
+            Login::Run { key, name } => registry::write(key, name, &run_value(exe)?),
         }
     }
 
@@ -260,9 +259,7 @@ mod registry {
         RRF_RT_REG_SZ,
     };
 
-    fn wide(text: &str) -> Vec<u16> {
-        text.encode_utf16().chain(Some(0)).collect()
-    }
+    use crate::wide;
 
     fn failed(status: u32) -> io::Error {
         io::Error::from_raw_os_error(status as i32)

@@ -7,3 +7,10 @@ pub mod log;
 pub mod login;
 pub mod one_copy;
 pub mod state;
+
+/// `text` as UTF-16 with a zero at the end, for the Windows API.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(Some(0)).collect()
+}

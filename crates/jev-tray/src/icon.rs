@@ -153,12 +153,10 @@ mod windows_theme {
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
     use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
 
+    use crate::wide;
+
     const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     const VALUE: &str = "SystemUsesLightTheme";
-
-    fn wide(text: &str) -> Vec<u16> {
-        text.encode_utf16().chain(Some(0)).collect()
-    }
 
     /// The DWORD `SystemUsesLightTheme`, or `None` when it cannot be read.
     pub fn system_uses_light_theme() -> Option<u32> {

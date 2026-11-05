@@ -98,8 +98,8 @@ fn fail(log_dir: Option<&Path>, message: &str) -> ! {
 
 #[cfg(windows)]
 fn show_error(message: &str) {
+    use jev_tray::wide;
     use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
     let (text, title) = (wide(message), wide("jev-tray"));
     // SAFETY: both strings end in a zero and live past the call; a null
     // owner window is allowed.
@@ -181,7 +181,13 @@ fn main() {
             );
             false
         }
-        Err(_) => false,
+        Err(error) => {
+            note(
+                log,
+                &format!("cannot find the Start at login entry: {error}"),
+            );
+            false
+        }
     };
     let login_item = CheckMenuItem::new("Start at login", true, login_on, None);
     let quit_item = MenuItem::new("Quit", true, None);

@@ -56,7 +56,7 @@ The source is SVG, on a 16 by 16 grid, in one color:
 
 ## 4. Start at login
 
-**Start at login** is off until you tick it. Ticking it writes one entry; unticking it deletes that entry. At start, `jev-tray` reads the entry, so the check item always matches the system.
+**Start at login** is off until you tick it. Ticking it writes one entry; unticking it deletes that entry. At start, `jev-tray` reads the entry, so the check item matches the system when `jev-tray` starts. `jev-tray` does not see a change that you make outside `jev-tray` while it runs.
 
 | System | Entry |
 | --- | --- |
@@ -100,7 +100,7 @@ The source is SVG, on a 16 by 16 grid, in one color:
 ## 6. Testing
 
 - **The state rule:** a test runs an in-process `jevd` and checks the state in four cases: running, stopped, no channel, and a reply that never comes.
-- **The login entries:** tests write and delete each system's entry under a temporary home, and check its text. The Windows test uses a test key under `HKCU\Software\jev-tray-test`, never the real `Run` key.
+- **The login entries:** tests write and delete each system's entry under a temporary home, and check its text. The Windows test uses a test key under `HKCU\Software` whose name starts with `jev-tray-test`, never the real `Run` key.
 - **The theme choice:** a test feeds both values of `SystemUsesLightTheme` and checks the icon choice.
 - **The icon files:** a test checks each PNG's size.
 - **By hand, once per system:** that the icon appears in a real tray, switches within 5 seconds of `jev start` and `jev stop`, follows a theme change, and that **Start at login** survives a sign-out. WSL has no tray, so the Linux check needs a Linux desktop.

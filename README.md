@@ -42,9 +42,11 @@ Click the icon to open its menu. The menu has two items:
 - **Start at login**: tick it, and `jev-tray` starts each time you sign in. Untick it to stop this. The entry holds the path of the `jev-tray` that you ticked it from, so tick it again after you move `jev-tray`.
 - **Quit**: closes `jev-tray`. `jevd` keeps running.
 
-**Start at login** writes one entry: a value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` on Windows, a file in `~/Library/LaunchAgents` on macOS, and a file in `~/.config/autostart` on Linux.
+**Start at login** writes one entry: a value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` on Windows, a file in `~/Library/LaunchAgents` on macOS, and a file in `$XDG_CONFIG_HOME/autostart` (by default `~/.config/autostart`) on Linux.
 
-On Linux, `jev-tray` needs GTK 3 and an AppIndicator library when it runs, and the desktop needs a tray host. GNOME has none until you install its AppIndicator extension. With no tray host, `jev-tray` shows nothing. On Linux, the icon is always white, and the panel shows no tooltip.
+When `jev-tray` cannot start, it writes the error to `jev-tray.log` in the jev state folder. On Windows, it also shows the error in a message box.
+
+On Linux, the desktop needs a tray host. GNOME has none until you install its AppIndicator extension. With no tray host, `jev-tray` shows nothing. On Linux, the icon is always white, and the panel shows no tooltip.
 
 ## Claude Code plugin
 
