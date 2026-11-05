@@ -4,6 +4,7 @@ jev lets local programs ask TypeSafe's Jev model while one background process, `
 
 - `jevd`: the per-user daemon. Programs and the `jev` CLI start it when they need it, and it exits after 2 hours with no use.
 - `jev`: the CLI. It manages keys, pairing, and settings, and `jev ask` sends a request.
+- `jev-tray`: a tray icon that shows whether `jevd` runs.
 - `plugins/claude-code`: a Claude Code plugin that gives other plugins `$.jev`.
 
 **Status:** before the first release. No release archive exists yet.
@@ -18,6 +19,33 @@ cargo install --locked --git https://github.com/mattbran87/jev-daemon jev
 
 That installs `jev` and `jevd` into the same folder, `~/.cargo/bin`. `jevd` accepts admin commands only from the `jev` next to it, so keep the two together.
 
+## jev-tray
+
+`jev-tray` shows one icon in the system tray. The icon has a check mark when `jevd` runs, and an x when it does not. The tooltip says the same. `jev-tray` checks every 5 seconds. It never starts, stops, or configures `jevd`.
+
+Install it from source:
+
+```bash
+cargo install --locked --git https://github.com/mattbran87/jev-daemon jev-tray
+```
+
+On Linux, the build needs GTK 3, and `jev-tray` loads an AppIndicator library when it runs. On Debian and Ubuntu, install both first:
+
+```bash
+sudo apt-get install libgtk-3-dev libayatana-appindicator3-dev
+```
+
+Then run `jev-tray`. Only one copy runs: a second copy exits at once.
+
+Click the icon to open its menu. The menu has two items:
+
+- **Start at login**: tick it, and `jev-tray` starts each time you sign in. Untick it to stop this. The entry holds the path of the `jev-tray` that you ticked it from, so tick it again after you move `jev-tray`.
+- **Quit**: closes `jev-tray`. `jevd` keeps running.
+
+**Start at login** writes one entry: a value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` on Windows, a file in `~/Library/LaunchAgents` on macOS, and a file in `~/.config/autostart` on Linux.
+
+On Linux, `jev-tray` needs GTK 3 and an AppIndicator library when it runs, and the desktop needs a tray host. GNOME has none until you install its AppIndicator extension. With no tray host, `jev-tray` shows nothing. On Linux, the icon is always white, and the panel shows no tooltip.
+
 ## Claude Code plugin
 
 Add the marketplace, then install the plugin. Run these in Claude Code:
@@ -31,7 +59,7 @@ The plugin needs `jev` on your `PATH`. Install it first (see above).
 
 ## Design
 
-The design is in [docs/superpowers/specs/2026-11-02-jev-daemon-design.md](docs/superpowers/specs/2026-11-02-jev-daemon-design.md).
+The design is in [docs/superpowers/specs/2026-11-02-jev-daemon-design.md](docs/superpowers/specs/2026-11-02-jev-daemon-design.md). The design of `jev-tray` is in [docs/superpowers/specs/2026-11-04-jev-tray-design.md](docs/superpowers/specs/2026-11-04-jev-tray-design.md).
 
 ## License
 

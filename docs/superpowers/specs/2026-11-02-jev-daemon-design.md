@@ -52,6 +52,7 @@ The Python prototype, jev-service, stays private. It serves as the reference for
 | `crates/jev-proto` | library | Wire types, the protocol version, and a small client that connects and starts `jevd` when needed. No tokio or reqwest dependency. |
 | `crates/jevd` | library | Socket server, pairing store, checks, keyring read, Jev HTTPS client. Its binary is built from the `jev` package. |
 | `crates/jev` | library and the binaries jev and jevd | The CLI, and the `jevd` binary (`src/bin/jevd.rs`), so one release archive holds both. |
+| `crates/jev-tray` | library and the binary jev-tray | A tray icon that shows whether `jevd` runs. It depends on `jev-proto`, not on `jevd`. Its design is in `2026-11-04-jev-tray-design.md`. |
 | `plugins/claude-code` | TypeScript mod | `$.jev` for other mods, and toasts |
 
 ### Storage
@@ -356,7 +357,8 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 | Targets | `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin` |
 | macOS | Apple Silicon (M1 and later) only. There is no Intel Mac archive. |
 | Archive | One app, the `jev` package, owns both binaries, so each archive holds `jev` and `jevd` in one folder. The peer check depends on that. |
-| Installers | Shell and PowerShell, from `dist`. They install both binaries into `$CARGO_HOME/bin`. `cargo install --locked --git https://github.com/mattbran87/jev-daemon jev` also works and installs both. |
+| jev-tray | A second app, the `jev-tray` package, with its own archive for each of the 4 targets. The `jev` archive does not hold it, so `jev` and `jevd` still run on a Linux server with no GTK. Its `Cargo.toml` names 2 Linux packages in `[package.metadata.dist.dependencies.apt]`: `libgtk-3-dev` and `libayatana-appindicator3-dev`. `dist` builds every app in one job for each target, so the Linux build of the `jev` archive also installs them. The `jev` binary does not link GTK. |
+| Installers | Shell and PowerShell, from `dist`. They install both binaries into `$CARGO_HOME/bin`. `cargo install --locked --git https://github.com/mattbran87/jev-daemon jev` also works and installs both. `jev-tray` gets its own pair of installers. |
 | Linux | glibc (`gnu`) builds on `ubuntu-22.04` and `ubuntu-22.04-arm`, so they need glibc 2.35 or newer. No musl build in v1. Every target builds on a native runner. |
 | crates.io | Nothing is published in v1. |
 | Pull requests | The release workflow builds every archive on a pull request and uploads them to the run, with no release (`pr-run-mode = "upload"`). |
@@ -369,10 +371,11 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 ### CI on each push and pull request
 
 - Windows, Linux, and macOS: `cargo fmt --check`, `cargo clippy` with warnings as errors, `cargo test --locked`, on Rust 1.99.1. CI pins its toolchain, so a new Rust release cannot fail a commit that passed.
+- The Linux `rust` job and the `msrv` job install `libgtk-3-dev` and `libayatana-appindicator3-dev` first. `jev-tray` needs GTK 3 to build, and it loads the AppIndicator library when it runs.
 - The macOS jobs run on `macos-14`, an Apple Silicon runner.
 - The MSRV, Rust 1.85: `cargo check --workspace --locked`, with no test targets, because `wiremock`, a test-only dependency, needs Rust 1.88.
 - The mod, on the 3 systems, with Claude Code 2.1.300: `claude plugin validate` on the marketplace and the plugin, and `claude plugin test`. `tsc` runs locally only: `/plugin-types` works only in an interactive session, and its file is Claude Code's own text, so the repo does not hold it.
-- `cargo deny` for licenses, security advisories, bans, and sources, with `deny.toml`. It ignores 3 "unmaintained" notices for the `zbus` 4 crates (RUSTSEC-2026-0370, -0371, -0372), each with its reason, until the MSRV allows `keyring` 4.
+- `cargo deny` for licenses, security advisories, bans, and sources, with `deny.toml`. It ignores 3 "unmaintained" notices for the `zbus` 4 crates (RUSTSEC-2026-0370, -0371, -0372), each with its reason, until the MSRV allows `keyring` 4. It also ignores the "unmaintained" notice for `proc-macro-error` (RUSTSEC-2024-0370), a build-time crate that `jev-tray` gets on Linux through `gtk` 0.18, until the MSRV allows `tray-icon` 0.25. A license exception allows `MPL-2.0` for the crate `option-ext` only. `jev-tray` also gets that crate on Linux.
 - The `deny` job runs 2 checks: `advisories`, and `bans licenses sources`. A new advisory can appear with no change in the repo. So on a pull request, a failed `advisories` step does not fail the job. On `main`, it fails the job.
 - `.github/workflows/advisories.yml` runs `cargo deny check advisories` each day, and fails when a new advisory appears. GitHub turns off a scheduled workflow after 60 days with no repo activity.
 - `deny.toml` bans `openssl` and `openssl-sys`, because the binaries use rustls.

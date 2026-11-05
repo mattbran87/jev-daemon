@@ -52,7 +52,7 @@ confidence-threshold = 0.93
 # -> dirs 6 -> dirs-sys -> option-ext. Look again when the MSRV allows
 # tray-icon 0.25.
 [[licenses.exceptions]]
-crate = "option-ext"
+crate = "option-ext@0.2"
 allow = ["MPL-2.0"]
 
 [bans]

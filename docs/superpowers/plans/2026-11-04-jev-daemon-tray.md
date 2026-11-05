@@ -67,6 +67,7 @@ These facts come from runs of this plan's code on 2026-11-04.
 - **One copy:** on Windows, `jev-tray` opens `jev-tray.lock` with share mode 0, so a second open fails with a sharing violation. On Unix, it takes `flock` with `LOCK_EX | LOCK_NB`. Both lock the file in the runtime folder from `jev_proto::paths`. The lock goes when the process exits.
 - **The release:** `[package.metadata.dist.dependencies.apt]` in `crates/jev-tray/Cargo.toml` names the 3 Linux packages, so the `dist` release build installs them. `dist` runs its own `apt-get install`; the metadata holds no `-y` flag.
 - **CI:** the Linux `rust` job and the `msrv` job install `libgtk-3-dev`, `libxdo-dev`, and `libayatana-appindicator3-dev` with `apt-get install -y` first.
+- Code reviews during execution changed parts of the design; the jev-tray spec records the current state.
 
 ## Files
 

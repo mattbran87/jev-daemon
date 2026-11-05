@@ -10,10 +10,11 @@ This design adds to the main spec, `2026-11-02-jev-daemon-design.md`. Where the 
 | --- | --- |
 | On | `jevd` answers `status` with a success reply. The icon shows a check mark. |
 | Off | Anything else: no channel, no reply in time, or an error reply. The icon shows an x. |
-| Tooltip | `jevd runs` when on, `jevd is not running` when off. |
+| Tooltip | `jevd runs` when on, `jevd is not running` when off. Windows and macOS show it. Linux does not: `tray-icon` has no tooltips on Linux, so there only the icon shows the state. |
 | Menu | Two items: **Start at login**, a check item, and **Quit**. |
 | Start state | Off, until the first check finishes. |
 | One copy | A second `jev-tray` exits at once with success, and shows nothing. |
+| Start-up failure | `jev-tray` opens no console. So when it cannot start, it writes one line, `<unix seconds> <message>`, to `jev-tray.log` in the state folder. On Windows, it also shows a message box. A failed read of the login entry also writes one line, once. |
 
 `jev-tray` never sends an admin message. It needs no pairing and no key.
 
@@ -23,6 +24,7 @@ This design adds to the main spec, `2026-11-02-jev-daemon-design.md`. Where the 
 - `connect_if_running` never starts `jevd`. `status` is not an admin message, so `jevd`'s peer check does not apply.
 - Each check closes its connection when it ends, so `jev-tray` holds no `max-connections` slot between checks.
 - A check that takes more than 5 seconds counts as off.
+- `jev-tray` runs one check at a time, through a `Checker`. While a check still runs, the next tick counts as off and starts nothing. So a check that hangs (for example, after someone stops `jevd` with `SIGSTOP`) never adds threads.
 - The icon and tooltip change only when the state changes.
 
 ## 3. The icon
@@ -44,11 +46,12 @@ The source is SVG, on a 16 by 16 grid, in one color:
 - `crates/jev-tray/icons/` holds the two SVG files and PNGs rendered from them at 16, 20, 24, 32, and 48 pixels, in black and in white.
 - A developer renders the PNGs once and commits them. The build needs no SVG renderer.
 - A test checks that each committed PNG has the size its name gives.
+- At 16 pixels, the edges of the icon are soft, because the border and the `j` sit on half pixels. This look is a deliberate choice.
 
 | System | How the icon matches the bar |
 | --- | --- |
 | macOS | The black PNG is a template image, so the menu bar recolors it for light and dark mode. |
-| Windows | `jev-tray` reads `SystemUsesLightTheme` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`. A light taskbar gets the black icon; a dark one, the white icon. It reads the value again at each check, so a theme change shows within 5 seconds. |
+| Windows | `jev-tray` reads `SystemUsesLightTheme` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`. A light taskbar gets the black icon; a dark one, the white icon. When the value is missing, the taskbar counts as dark. It reads the value again at each check, so a theme change shows within 5 seconds. |
 | Linux | The white icon, always. Linux panels do not report their theme reliably, and most panels are dark. |
 
 ## 4. Start at login
@@ -68,11 +71,13 @@ The source is SVG, on a 16 by 16 grid, in one color:
 ## 5. Platforms and packaging
 
 - **Code:** a new crate, `crates/jev-tray`, with one binary, `jev-tray`. It depends on `jev-proto`, not on `jevd`.
-- **Tray and menu:** `tray-icon` 0.24.2 and its `muda` menus, with `tao` for the event loop. `tray-icon` 0.25 and later need Rust 1.90, above the workspace MSRV of 1.85.
+- **Tray and menu:** `tray-icon` 0.24.2 and its `muda` menus, with `tao` for the event loop. `tray-icon` 0.25 and later need Rust 1.90, above the workspace MSRV of 1.85. `tao` and `tray-icon` use no default features, so `jev-tray` turns off the `libxdo` feature of `tray-icon`.
 - **Windows:** the binary uses the `windows` subsystem, so it opens no console window.
 - **macOS:** the app has no Dock icon; it sets the activation policy to accessory.
-- **Linux:** `tray-icon` needs GTK 3 and an AppIndicator library to build and to run. A desktop with no tray host, such as GNOME without its AppIndicator extension, shows nothing; the README says so.
+- **Linux:** `tray-icon` needs GTK 3 to build and to run. It loads an AppIndicator library when it runs. A desktop with no tray host, such as GNOME without its AppIndicator extension, shows nothing; the README says so.
 - **One copy:** `jev-tray` locks `jev-tray.lock` in the runtime folder from `jev_proto::paths`. If another `jev-tray` holds the lock, it exits with success.
+  - On Windows, the lock is a `LockFileEx` lock on one byte of the file. `jev-tray` opens the file with read and write sharing. So when another program has the file open (for example, an antivirus scan), the only copy does not exit.
+  - On Unix, the lock is `flock`.
 
 ### Release
 
@@ -82,9 +87,15 @@ The source is SVG, on a 16 by 16 grid, in one color:
 
 ### CI
 
-- Linux builds of `jev-tray` need `libgtk-3-dev`, `libxdo-dev`, and `libayatana-appindicator3-dev`. The Linux `rust` job and the Linux `jev-tray` release builds install them first.
+- On Linux, `jev-tray` needs 2 packages. It needs `libgtk-3-dev` to build. It loads the library from `libayatana-appindicator3-dev` when it runs, and CI installs that package to match a desktop.
+- The Linux `rust` job and the `msrv` job install both packages first.
+- On the release runner, the build of the `jev` archive also gets these packages, because `dist` builds every app in one job for each target. The `jev` binary does not link GTK: `cargo tree -p jev -i gtk-sys` finds nothing.
 - The workspace tests run `jev-tray`'s unit tests on all three systems.
 - `cargo deny` checks the new dependencies' licenses. A license outside the allow list fails CI, and the list grows only by a reviewed change.
+- `jev-tray` adds 2 entries to `deny.toml`. Both are for Linux only:
+  - A license exception allows `MPL-2.0` for the crate `option-ext` only. The global allow list does not hold `MPL-2.0`. `jev-tray` gets `option-ext` through `dirs` 6 from `tray-icon`.
+  - `deny.toml` ignores the advisory RUSTSEC-2024-0370. It says that `proc-macro-error` has no maintainer. `jev-tray` uses that crate at build time only, through `glib-macros` 0.18 (from `gtk` 0.18).
+  - When the MSRV allows `tray-icon` 0.25, look at both entries again.
 
 ## 6. Testing
 
@@ -98,6 +109,7 @@ The source is SVG, on a 16 by 16 grid, in one color:
 
 - A Linux desktop with no tray host shows no icon.
 - On Linux, the icon is white on every panel, so it is hard to see on a light panel.
+- `tray-icon` shows no tooltip on Linux, so on Linux only the icon shows the state. A failed **Start at login** change shows only as the check item that flips back.
 - `jev-tray` shows only whether `jevd` answers. It does not show keys, clients, or pending pairings.
 - Moving `jev-tray` after you tick **Start at login** leaves the entry pointing at the old path until you tick it again.
 
