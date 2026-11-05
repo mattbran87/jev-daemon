@@ -323,11 +323,14 @@ pub fn run() {
                     tray = None;
                     *control_flow = ControlFlow::Exit;
                 } else if event.id == *control_item.id() {
-                    if let (false, Some(tray)) = (running, tray.as_ref()) {
+                    if let (false, Some(tray)) = (running, tray.as_mut()) {
                         running = true;
                         control_item.set_enabled(false);
+                        // The click ends the display of a failed Start or Stop.
                         failure = None;
-                        start_action(Action::for_state(tray.state), &proxy);
+                        let (state, (_, shade, size)) = (tray.state, tray.shown);
+                        tray.show(state, shade, size, None);
+                        start_action(Action::for_state(state), &proxy);
                     }
                 } else if event.id == *login_item.id() {
                     if let Err(error) = apply_login(&login_item, &login) {

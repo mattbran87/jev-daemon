@@ -112,7 +112,7 @@ The source is SVG, on a 16 by 16 grid, in one color:
 
 - A Linux desktop with no tray host shows no icon.
 - On Linux, the icon is white on every panel, so it is hard to see on a light panel.
-- `tray-icon` shows no tooltip on Linux, so on Linux only the icon shows the state. A failed **Start at login** change shows only as the check item that flips back.
+- `tray-icon` shows no tooltip on Linux, so on Linux only the icon shows the state. A failed **Start at login** change shows only as the check item that flips back. A failed **Start jevd** or **Stop jevd** shows only as the log line and the label that does not change.
 - `jev-tray` shows only whether `jevd` answers. It does not show keys, clients, or pending pairings.
 - Moving `jev-tray` after you tick **Start at login** leaves the entry pointing at the old path until you tick it again.
 
