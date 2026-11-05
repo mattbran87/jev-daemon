@@ -57,6 +57,22 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
+      - name: jev and jevd do not link GTK
+        # Only jev-tray may need GTK, so jev and jevd still run on a server with no desktop.
+        if: runner.os == 'Linux'
+        run: |
+          cargo build -p jev --bins --locked
+          for program in jev jevd; do
+            if ldd "target/debug/$program" | grep -Ei 'gtk|gdk|appindicator'; then
+              echo "$program links GTK"
+              exit 1
+            fi
+          done
+          ldd target/debug/jev-tray | grep -q libgtk-3
+          if cargo tree -p jev --no-default-features -e normal --locked | grep -Ei 'gtk|tray-icon'; then
+            echo "jev without the tray feature still depends on GTK"
+            exit 1
+          fi
 
   msrv:
     # The MSRV value lives in env.MSRV and in the workspace rust-version.
@@ -80,6 +96,8 @@ jobs:
       - name: Check
         # No --all-targets: wiremock, a test-only dependency, needs Rust 1.88.
         run: cargo check --workspace --locked
+      - name: Check without the tray
+        run: cargo check -p jev --no-default-features --locked
 
   mod:
     name: mod (${{ matrix.os }})

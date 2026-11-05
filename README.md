@@ -19,10 +19,10 @@ cargo install --locked --git https://github.com/mattbran87/jev-daemon jev
 
 That installs `jev`, `jevd`, and `jev-tray` into the same folder, `~/.cargo/bin`. `jevd` accepts admin commands only from the `jev` next to it, so keep the two together. Each release archive and each installer also holds all three.
 
-On Linux, the build of `jev-tray` needs GTK 3. On Debian and Ubuntu, install the GTK development package first:
+On Linux, the build of `jev-tray` needs GTK 3 and `pkg-config`. On Debian and Ubuntu, install them first:
 
 ```bash
-sudo apt-get install libgtk-3-dev
+sudo apt-get install pkg-config libgtk-3-dev
 ```
 
 To build only `jev` and `jevd`, with no GTK, add `--no-default-features`. From a clone of the repository:
