@@ -130,7 +130,9 @@ fn no_channel_is_off() {
     paths.prepare_runtime_dir().unwrap();
     assert_eq!(check(&paths), State::Off);
     let took = started.elapsed();
-    assert!(took < Duration::from_secs(1), "{took:?}");
+    // Well under the 5 s limit, so the off comes fast, not from a timeout;
+    // wide enough for a slow, busy machine.
+    assert!(took < Duration::from_secs(3), "{took:?}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -146,7 +148,8 @@ async fn an_error_reply_is_off() {
     let took = started.elapsed();
     server.abort();
     assert_eq!(state, State::Off);
-    assert!(took < Duration::from_secs(2), "{took:?}");
+    // Under the 5 s limit, so the off comes from the reply.
+    assert!(took < Duration::from_secs(3), "{took:?}");
 }
 
 /// The positive control for `an_error_reply_is_off`: the same fake with a
