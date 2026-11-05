@@ -40,8 +40,15 @@ pub fn tooltip(state: State, login_error: Option<&str>) -> String {
         None => state.tooltip().to_string(),
         Some(error) => format!("{}\nStart at login failed: {error}", state.tooltip()),
     };
-    while text.encode_utf16().count() > TOOLTIP_MAX {
-        text.pop();
+    // Cut before the first character that would pass the limit, so a
+    // character that takes 2 UTF-16 units is never split.
+    let mut units = 0;
+    let end = text.char_indices().find_map(|(index, ch)| {
+        units += ch.len_utf16();
+        (units > TOOLTIP_MAX).then_some(index)
+    });
+    if let Some(end) = end {
+        text.truncate(end);
     }
     text
 }
@@ -155,5 +162,23 @@ mod tests {
         let text = tooltip(State::Off, Some(&long));
         assert_eq!(text.encode_utf16().count(), TOOLTIP_MAX);
         assert!(text.starts_with("jevd is not running\n"));
+    }
+
+    #[test]
+    fn a_cut_never_splits_a_character_of_two_utf16_units() {
+        // 44 units before the faces, so the 42nd face would end at unit 128.
+        let error = format!("x{}", "\u{1F600}".repeat(100));
+        let text = tooltip(State::Off, Some(&error));
+        let units: Vec<u16> = text.encode_utf16().collect();
+        assert!(units.len() <= TOOLTIP_MAX, "{}", units.len());
+        assert_eq!(String::from_utf16(&units).unwrap(), text);
+        assert_eq!(
+            text,
+            format!(
+                "jevd is not running\nStart at login failed: x{}",
+                "\u{1F600}".repeat(41)
+            )
+        );
+        assert_eq!(units.len(), 126);
     }
 }

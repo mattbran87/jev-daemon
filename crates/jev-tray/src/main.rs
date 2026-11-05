@@ -2,9 +2,11 @@
 //! spec). A worker thread checks every 5 seconds and sends each result to
 //! the event loop, which changes the icon and tooltip only on a change.
 
-// No console window on Windows.
-#![cfg_attr(windows, windows_subsystem = "windows")]
+// No console window on Windows in a release build; a debug build keeps one,
+// so `cargo run` shows what the program prints.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+use std::path::Path;
 use std::time::Instant;
 
 use jev_proto::Paths;
@@ -72,10 +74,48 @@ fn size_now(target: &EventLoopWindowTarget<Message>) -> u32 {
     icon::size_for(icon::POINTS, scale)
 }
 
-fn fail(message: &str) -> ! {
+/// Prints `message`, and adds it to the log in `log_dir` when there is one.
+/// A failure to write the log is ignored: there is no other place to tell.
+fn note(log_dir: Option<&Path>, message: &str) {
     eprintln!("jev-tray: {message}");
+    if let Some(dir) = log_dir {
+        let _ = jev_tray::log::append(dir, message);
+    }
+}
+
+/// Reports a start-up failure: the log line, and on Windows, where there is
+/// no console, a message box.
+fn report(log_dir: Option<&Path>, message: &str) {
+    note(log_dir, message);
+    show_error(message);
+}
+
+/// Reports a start-up failure and exits.
+fn fail(log_dir: Option<&Path>, message: &str) -> ! {
+    report(log_dir, message);
     std::process::exit(1);
 }
+
+#[cfg(windows)]
+fn show_error(message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (text, title) = (wide(message), wide("jev-tray"));
+    // SAFETY: both strings end in a zero and live past the call; a null
+    // owner window is allowed.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+/// Elsewhere the message reaches the terminal or the session log.
+#[cfg(not(windows))]
+fn show_error(_message: &str) {}
 
 /// Checks every 5 seconds, until the event loop is gone.
 fn watch(paths: Paths, proxy: EventLoopProxy<Message>) {
@@ -110,13 +150,15 @@ fn apply_login(item: &CheckMenuItem, login: &Result<Login, String>) -> Result<()
 
 fn main() {
     let paths = Paths::from_env()
-        .unwrap_or_else(|error| fail(&format!("cannot find the jev folders: {error}")));
+        .unwrap_or_else(|error| fail(None, &format!("cannot find the jev folders: {error}")));
+    let log_dir = paths.state_dir.clone();
+    let log = Some(log_dir.as_path());
     // Held until the process exits: `run` below never returns.
     let _lock = match one_copy::lock(&paths) {
         Ok(Some(lock)) => lock,
         // Another jev-tray runs.
         Ok(None) => return,
-        Err(error) => fail(&format!("cannot take the one-copy lock: {error}")),
+        Err(error) => fail(log, &format!("cannot take the one-copy lock: {error}")),
     };
 
     #[allow(unused_mut)]
@@ -129,16 +171,23 @@ fn main() {
     }
 
     let login = Login::for_this_user().map_err(|error| error.to_string());
-    let login_on = login
-        .as_ref()
-        .ok()
-        .and_then(|login| login.is_on().ok())
-        .unwrap_or(false);
+    // Read once, at start; a failed read shows the item unticked.
+    let login_on = match login.as_ref().map(Login::is_on) {
+        Ok(Ok(on)) => on,
+        Ok(Err(error)) => {
+            note(
+                log,
+                &format!("cannot read the Start at login entry: {error}"),
+            );
+            false
+        }
+        Err(_) => false,
+    };
     let login_item = CheckMenuItem::new("Start at login", true, login_on, None);
     let quit_item = MenuItem::new("Quit", true, None);
     let menu = Menu::new();
     menu.append_items(&[&login_item, &quit_item])
-        .unwrap_or_else(|error| fail(&format!("cannot build the menu: {error}")));
+        .unwrap_or_else(|error| fail(log, &format!("cannot build the menu: {error}")));
     let mut menu = Some(menu);
 
     let proxy = event_loop.create_proxy();
@@ -149,7 +198,7 @@ fn main() {
     std::thread::Builder::new()
         .name("jev-tray-watch".into())
         .spawn(move || watch(paths, proxy))
-        .unwrap_or_else(|error| fail(&format!("cannot start the check thread: {error}")));
+        .unwrap_or_else(|error| fail(log, &format!("cannot start the check thread: {error}")));
 
     let mut tray: Option<Tray> = None;
     event_loop.run(move |event, target, control_flow| {
@@ -178,7 +227,8 @@ fn main() {
                         })
                     }
                     Err(error) => {
-                        eprintln!("jev-tray: cannot show the tray icon: {error}");
+                        let message = format!("cannot show the tray icon: {error}");
+                        report(Some(&log_dir), &message);
                         *control_flow = ControlFlow::ExitWithCode(1);
                     }
                 }
