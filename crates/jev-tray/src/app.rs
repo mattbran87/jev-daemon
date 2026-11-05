@@ -1,19 +1,16 @@
-//! `jev-tray`: one tray icon that shows whether `jevd` runs (the jev-tray
-//! spec). A worker thread checks every 5 seconds and sends each result to
-//! the event loop, which changes the icon and tooltip only on a change.
-
-// No console window on Windows in a release build; a debug build keeps one,
-// so `cargo run` shows what the program prints.
-#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+//! The tray program: one tray icon that shows whether `jevd` runs (the
+//! jev-tray spec). A worker thread checks every 5 seconds and sends each
+//! result to the event loop, which changes the icon and tooltip only on a
+//! change. The `jev-tray` binary of the `jev` package calls [`run`].
 
 use std::path::Path;
 use std::time::Instant;
 
+use crate::icon::{self, Shade};
+use crate::login::Login;
+use crate::one_copy;
+use crate::state::{self, Checker, State, CHECK_LIMIT};
 use jev_proto::Paths;
-use jev_tray::icon::{self, Shade};
-use jev_tray::login::Login;
-use jev_tray::one_copy;
-use jev_tray::state::{self, Checker, State, CHECK_LIMIT};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem};
@@ -85,7 +82,7 @@ fn size_now(target: &EventLoopWindowTarget<Message>) -> u32 {
 fn note(log_dir: Option<&Path>, message: &str) {
     eprintln!("jev-tray: {message}");
     if let Some(dir) = log_dir {
-        let _ = jev_tray::log::append(dir, message);
+        let _ = crate::log::append(dir, message);
     }
 }
 
@@ -104,7 +101,7 @@ fn fail(log_dir: Option<&Path>, message: &str) -> ! {
 
 #[cfg(windows)]
 fn show_error(message: &str) {
-    use jev_tray::wide;
+    use crate::wide;
     use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
     let (text, title) = (wide(message), wide("jev-tray"));
     // SAFETY: both strings end in a zero and live past the call; a null
@@ -154,7 +151,11 @@ fn apply_login(item: &CheckMenuItem, login: &Result<Login, String>) -> Result<()
     }
 }
 
-fn main() {
+/// Runs the tray until the user picks Quit, then exits the process. Returns
+/// at once when another copy of jev-tray already runs. A start-up failure
+/// goes to the log (and a message box on Windows), and the process exits
+/// with code 1.
+pub fn run() {
     let paths = Paths::from_env()
         .unwrap_or_else(|error| fail(None, &format!("cannot find the jev folders: {error}")));
     let log_dir = paths.state_dir.clone();

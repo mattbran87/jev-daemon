@@ -17,22 +17,28 @@ You need Rust 1.85 or newer.
 cargo install --locked --git https://github.com/mattbran87/jev-daemon jev
 ```
 
-That installs `jev` and `jevd` into the same folder, `~/.cargo/bin`. `jevd` accepts admin commands only from the `jev` next to it, so keep the two together.
+That installs `jev`, `jevd`, and `jev-tray` into the same folder, `~/.cargo/bin`. `jevd` accepts admin commands only from the `jev` next to it, so keep the two together. Each release archive and each installer also holds all three.
+
+On Linux, the build of `jev-tray` needs GTK 3. On Debian and Ubuntu, install the GTK development package first:
+
+```bash
+sudo apt-get install libgtk-3-dev
+```
+
+To build only `jev` and `jevd`, with no GTK, add `--no-default-features`. From a clone of the repository:
+
+```bash
+cargo install --locked --path crates/jev --no-default-features
+```
 
 ## jev-tray
 
 `jev-tray` shows one icon in the system tray. The icon has a check mark when `jevd` runs, and an x when it does not. The tooltip says the same. `jev-tray` checks every 5 seconds. It never starts, stops, or configures `jevd`.
 
-Install it from source:
+`jev-tray` installs with `jev` (see above). On Linux, `jev-tray` needs GTK 3 and an AppIndicator library when it runs. `jev` and `jevd` do not need them, so they still run on a server with no desktop. On Debian and Ubuntu, install the two libraries for `jev-tray`:
 
 ```bash
-cargo install --locked --git https://github.com/mattbran87/jev-daemon jev-tray
-```
-
-On Linux, the build needs GTK 3, and `jev-tray` loads an AppIndicator library when it runs. On Debian and Ubuntu, install both first:
-
-```bash
-sudo apt-get install libgtk-3-dev libayatana-appindicator3-dev
+sudo apt-get install libgtk-3-0 libayatana-appindicator3-1
 ```
 
 Then run `jev-tray`. Only one copy runs: a second copy exits at once.

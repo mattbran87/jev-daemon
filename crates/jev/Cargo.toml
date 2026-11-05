@@ -1,6 +1,6 @@
 [package]
 name = "jev"
-description = "The jev command line and the jevd daemon"
+description = "The jev command line, the jevd daemon, and the jev-tray icon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,9 +16,29 @@ name = "jevd"
 path = "src/bin/jevd.rs"
 doc = false
 
+# The tray icon. Only this binary links GTK on Linux; jev and jevd do not.
+[[bin]]
+name = "jev-tray"
+path = "src/bin/jev-tray.rs"
+required-features = ["tray"]
+doc = false
+
+[features]
+default = ["tray"]
+# Builds jev-tray. Without it (--no-default-features), a Linux build needs no
+# GTK and gives only jev and jevd.
+tray = ["dep:jev-tray"]
+
+# jev-tray needs GTK 3 to build on Linux, and it loads the AppIndicator
+# library at run time.
+[package.metadata.dist.dependencies.apt]
+libgtk-3-dev = "*"
+libayatana-appindicator3-dev = "*"
+
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
 jev-proto = { version = "0.1.0", path = "../jev-proto" }
+jev-tray = { version = "0.1.0", path = "../jev-tray", optional = true }
 jevd = { version = "0.1.0", path = "../jevd" }
 rpassword = "7"
 serde_json = "1"

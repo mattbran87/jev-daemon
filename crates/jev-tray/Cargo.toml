@@ -7,11 +7,9 @@ license.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 
-# jev-tray is its own dist app, with its own archives. On Linux, it needs GTK 3
-# to build, and it loads the AppIndicator library at run time.
-[package.metadata.dist.dependencies.apt]
-libgtk-3-dev = "*"
-libayatana-appindicator3-dev = "*"
+# A library only: the jev-tray binary is in the jev package, so it ships in
+# the jev archives. On Linux, this crate needs GTK 3 to build, and it loads
+# the AppIndicator library at run time.
 
 [dependencies]
 jev-proto = { version = "0.1.0", path = "../jev-proto" }

@@ -51,8 +51,8 @@ The Python prototype, jev-service, stays private. It serves as the reference for
 | --- | --- | --- |
 | `crates/jev-proto` | library | Wire types, the protocol version, and a small client that connects and starts `jevd` when needed. No tokio or reqwest dependency. |
 | `crates/jevd` | library | Socket server, pairing store, checks, keyring read, Jev HTTPS client. Its binary is built from the `jev` package. |
-| `crates/jev` | library and the binaries jev and jevd | The CLI, and the `jevd` binary (`src/bin/jevd.rs`), so one release archive holds both. |
-| `crates/jev-tray` | library and the binary jev-tray | A tray icon that shows whether `jevd` runs. It depends on `jev-proto`, not on `jevd`. Its design is in `2026-11-04-jev-tray-design.md`. |
+| `crates/jev` | library and the binaries jev, jevd, and jev-tray | The CLI, the `jevd` binary (`src/bin/jevd.rs`), and the `jev-tray` binary (`src/bin/jev-tray.rs`), so one release archive holds all three. The `tray` feature, on by default, builds `jev-tray`. |
+| `crates/jev-tray` | library | The tray icon that shows whether `jevd` runs. The `jev-tray` binary in `crates/jev` calls it. It depends on `jev-proto`, not on `jevd`. Its design is in `2026-11-04-jev-tray-design.md`. |
 | `plugins/claude-code` | TypeScript mod | `$.jev` for other mods, and toasts |
 
 ### Storage
@@ -356,9 +356,9 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 | Tool | `dist` 0.33.1, run by `.github/workflows/release.yml` on each version tag. Its settings sit in `dist-workspace.toml`; `dist generate` writes the workflow. |
 | Targets | `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin` |
 | macOS | Apple Silicon (M1 and later) only. There is no Intel Mac archive. |
-| Archive | One app, the `jev` package, owns both binaries, so each archive holds `jev` and `jevd` in one folder. The peer check depends on that. |
-| jev-tray | A second app, the `jev-tray` package, with its own archive for each of the 4 targets. The `jev` archive does not hold it, so `jev` and `jevd` still run on a Linux server with no GTK. Its `Cargo.toml` names 2 Linux packages in `[package.metadata.dist.dependencies.apt]`: `libgtk-3-dev` and `libayatana-appindicator3-dev`. `dist` builds every app in one job for each target, so the Linux build of the `jev` archive also installs them. The `jev` binary does not link GTK. |
-| Installers | Shell and PowerShell, from `dist`. They install both binaries into `$CARGO_HOME/bin`. `cargo install --locked --git https://github.com/mattbran87/jev-daemon jev` also works and installs both. `jev-tray` gets its own pair of installers. |
+| Archive | One app, the `jev` package, owns all three binaries, so each archive holds `jev`, `jevd`, and `jev-tray` in one folder. The peer check depends on `jev` and `jevd` in one folder. |
+| jev-tray | A binary of the `jev` app, so there is no second app. On Linux, only `jev-tray` links GTK. `jev` and `jevd` do not, so they still run on a Linux server with no GTK. The `jev` `Cargo.toml` names 2 Linux packages in `[package.metadata.dist.dependencies.apt]`: `libgtk-3-dev` and `libayatana-appindicator3-dev`. The Linux release runners install them before the build. |
+| Installers | Shell and PowerShell, from `dist`. They install the three binaries into `$CARGO_HOME/bin`. `cargo install --locked --git https://github.com/mattbran87/jev-daemon jev` also works and installs all three. On Linux, that build needs `libgtk-3-dev`. With `--no-default-features`, it builds only `jev` and `jevd`, with no GTK. |
 | Linux | glibc (`gnu`) builds on `ubuntu-22.04` and `ubuntu-22.04-arm`, so they need glibc 2.35 or newer. No musl build in v1. Every target builds on a native runner. |
 | crates.io | Nothing is published in v1. |
 | Pull requests | The release workflow builds every archive on a pull request and uploads them to the run, with no release (`pr-run-mode = "upload"`). |

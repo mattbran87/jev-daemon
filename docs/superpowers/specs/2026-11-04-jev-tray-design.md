@@ -70,7 +70,8 @@ The source is SVG, on a 16 by 16 grid, in one color:
 
 ## 5. Platforms and packaging
 
-- **Code:** a new crate, `crates/jev-tray`, with one binary, `jev-tray`. It depends on `jev-proto`, not on `jevd`.
+- **Code:** a new library crate, `crates/jev-tray`. It holds the program, in `jev_tray::app::run`. It depends on `jev-proto`, not on `jevd`.
+- **Binary:** the `jev` package holds the `jev-tray` binary, `crates/jev/src/bin/jev-tray.rs`. It only calls `jev_tray::app::run`. The `jev` package gets `jev-tray` through its `tray` feature, which is on by default. The binary needs that feature (`required-features`).
 - **Tray and menu:** `tray-icon` 0.24.2 and its `muda` menus, with `tao` for the event loop. `tray-icon` 0.25 and later need Rust 1.90, above the workspace MSRV of 1.85. `tao` and `tray-icon` use no default features, so `jev-tray` turns off the `libxdo` feature of `tray-icon`.
 - **Windows:** the binary uses the `windows` subsystem, so it opens no console window.
 - **macOS:** the app has no Dock icon; it sets the activation policy to accessory.
@@ -81,15 +82,17 @@ The source is SVG, on a 16 by 16 grid, in one color:
 
 ### Release
 
-- `jev-tray` is its own `dist` app, with its own archives for the same 4 targets as `jev`.
-- The `jev` archive does not change, so `jev` and `jevd` still run on a Linux server with no GTK.
+- `jev-tray` is a binary of the `jev` app. So the `jev` archive for each of the 4 targets holds `jev`, `jevd`, and `jev-tray`, and the `jev` installers install all three.
+- On Linux, only `jev-tray` links GTK. `jev` and `jevd` do not, so they still run on a Linux server with no GTK. On such a server, `jev-tray` does not start.
+- `cargo install` with `--no-default-features` builds only `jev` and `jevd`, with no GTK.
 - `jev-tray` needs no particular folder: it does not have to sit next to `jev`.
 
 ### CI
 
 - On Linux, `jev-tray` needs 2 packages. It needs `libgtk-3-dev` to build. It loads the library from `libayatana-appindicator3-dev` when it runs, and CI installs that package to match a desktop.
 - The Linux `rust` job and the `msrv` job install both packages first.
-- On the release runner, the build of the `jev` archive also gets these packages, because `dist` builds every app in one job for each target. The `jev` binary does not link GTK: `cargo tree -p jev -i gtk-sys` finds nothing.
+- The `jev` package names both packages in `[package.metadata.dist.dependencies.apt]`, so the Linux release runners install them before the build.
+- The `jev` and `jevd` binaries do not link GTK: on Linux, `ldd` shows no `libgtk` for them. Only `ldd jev-tray` shows `libgtk-3`.
 - The workspace tests run `jev-tray`'s unit tests on all three systems.
 - `cargo deny` checks the new dependencies' licenses. A license outside the allow list fails CI, and the list grows only by a reviewed change.
 - `jev-tray` adds 2 entries to `deny.toml`. Both are for Linux only:
