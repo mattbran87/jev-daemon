@@ -33,7 +33,7 @@ cargo install --locked --path crates/jev --no-default-features
 
 ## jev-tray
 
-`jev-tray` shows one icon in the system tray. The icon has a check mark when `jevd` runs, and an x when it does not. The tooltip says the same. `jev-tray` checks every 5 seconds. It never starts, stops, or configures `jevd`.
+`jev-tray` shows one icon in the system tray. The icon has a check mark when `jevd` runs, and an x when it does not. The tooltip says the same. `jev-tray` checks every 5 seconds. Its menu can also start and stop `jevd`. It never configures `jevd`.
 
 `jev-tray` installs with `jev` (see above). On Linux, `jev-tray` needs GTK 3 and an AppIndicator library when it runs. `jev` and `jevd` do not need them, so they still run on a server with no desktop. On Debian and Ubuntu, install the two libraries for `jev-tray`:
 
@@ -43,10 +43,13 @@ sudo apt-get install libgtk-3-0 libayatana-appindicator3-1
 
 Then run `jev-tray`. Only one copy runs: a second copy exits at once.
 
-Click the icon to open its menu. The menu has two items:
+Click the icon, with either button, to open its menu. The menu has three items:
 
+- **Start jevd** or **Stop jevd**: the label follows the icon. A click runs `jev start` or `jev stop` from the folder that holds `jev-tray`, so keep `jev` in that folder. If the command fails, the error goes to `jev-tray.log` in the jev state folder. On Windows and macOS, the tooltip also shows it.
 - **Start at login**: tick it, and `jev-tray` starts each time you sign in. Untick it to stop this. The entry holds the path of the `jev-tray` that you ticked it from, so tick it again after you move `jev-tray`.
 - **Quit**: closes `jev-tray`. `jevd` keeps running.
+
+**Stop jevd** does not last. The next request from a plugin or from `jev` starts `jevd` again.
 
 **Start at login** writes one entry: a value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` on Windows, a file in `~/Library/LaunchAgents` on macOS, and a file in `$XDG_CONFIG_HOME/autostart` (by default `~/.config/autostart`) on Linux.
 

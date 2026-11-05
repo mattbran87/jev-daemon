@@ -1,6 +1,6 @@
 # jev-tray design
 
-`jev-tray` is a small program that shows one icon in the system tray. The icon tells you whether `jevd` runs. It does nothing else: it never starts, stops, or configures `jevd`.
+`jev-tray` is a small program that shows one icon in the system tray. The icon tells you whether `jevd` runs. It also starts and stops `jevd` through `jev`, from its menu. It never configures `jevd`.
 
 This design adds to the main spec, `2026-11-02-jev-daemon-design.md`. Where the two disagree on `jev-tray`, this document wins.
 
@@ -11,12 +11,12 @@ This design adds to the main spec, `2026-11-02-jev-daemon-design.md`. Where the 
 | On | `jevd` answers `status` with a success reply. The icon shows a check mark. |
 | Off | Anything else: no channel, no reply in time, or an error reply. The icon shows an x. |
 | Tooltip | `jevd runs` when on, `jevd is not running` when off. Windows and macOS show it. Linux does not: `tray-icon` has no tooltips on Linux, so there only the icon shows the state. |
-| Menu | Two items: **Start at login**, a check item, and **Quit**. |
+| Menu | Three items: **Start jevd** or **Stop jevd**, **Start at login**, and **Quit**. See the Start and Stop spec, `2026-11-04-jev-tray-start-stop-design.md`. |
 | Start state | Off, until the first check finishes. |
 | One copy | A second `jev-tray` exits at once with success, and shows nothing. |
 | Start-up failure | `jev-tray` opens no console. So when it cannot start, it writes one line, `<unix seconds> <message>`, to `jev-tray.log` in the state folder. On Windows, it also shows a message box. A failed read of the login entry also writes one line, once. |
 
-`jev-tray` never sends an admin message. It needs no pairing and no key.
+`jev-tray` never sends an admin message itself. `jev stop` sends `stop`. `jev-tray` needs no pairing and no key.
 
 ## 2. Reading the state
 
@@ -85,7 +85,7 @@ The source is SVG, on a 16 by 16 grid, in one color:
 - `jev-tray` is a binary of the `jev` app. So the `jev` archive for each of the 4 targets holds `jev`, `jevd`, and `jev-tray`, and the `jev` installers install all three.
 - On Linux, only `jev-tray` links GTK. `jev` and `jevd` do not, so they still run on a Linux server with no GTK. On such a server, `jev-tray` does not start.
 - `cargo install` with `--no-default-features` builds only `jev` and `jevd`, with no GTK.
-- `jev-tray` needs no particular folder: it does not have to sit next to `jev`.
+- The icon works in any folder. **Start jevd** and **Stop jevd** need `jev` in the same folder as `jev-tray`.
 
 ### CI
 
@@ -118,7 +118,6 @@ The source is SVG, on a 16 by 16 grid, in one color:
 
 ## 8. Out of scope
 
-- Starting or stopping `jevd` from the menu.
 - Showing pending pairings, clients, or profiles.
 - Notifications.
 - An installer that ticks **Start at login** for you.
