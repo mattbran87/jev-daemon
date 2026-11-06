@@ -7,7 +7,25 @@ jev lets local programs ask TypeSafe's Jev model while one background process, `
 - `jev-tray`: a tray icon that shows whether `jevd` runs.
 - `plugins/claude-code`: a Claude Code plugin that gives other plugins `$.jev`.
 
-**Status:** before the first release. No release archive exists yet.
+**Status:** 0.1.0, the first release. See [CHANGELOG.md](CHANGELOG.md).
+
+## Install
+
+Each installer puts `jev`, `jevd`, and `jev-tray` into `~/.cargo/bin`.
+
+On Linux and macOS:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/mattbran87/jev-daemon/releases/latest/download/jev-installer.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/mattbran87/jev-daemon/releases/latest/download/jev-installer.ps1 | iex"
+```
+
+The [releases page](https://github.com/mattbran87/jev-daemon/releases) also has an archive for each target: Linux on x86_64 and aarch64 (glibc 2.35 or newer), Windows on x86_64, and macOS on Apple Silicon only.
 
 ## Build from source
 
