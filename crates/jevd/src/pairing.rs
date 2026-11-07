@@ -1,6 +1,10 @@
 //! Pairing (spec section 3): pending requests in memory, paired clients in a
 //! JSON file that holds token hashes, never tokens. Only jevd writes the file.
 //!
+//! The requests that wait for a person also go to a pending file, so they
+//! survive a restart (the pairing-restart spec). It holds no token and no
+//! request ID. An approved request that is not committed stays in memory only.
+//!
 //! A client is committed (saved, and able to ask) only when its token reaches
 //! its storage (spec decision 18). For a socket client, that is the first
 //! `pair-status` after the approval. For a CLI client, `approve` gives the
@@ -65,6 +69,49 @@ struct File {
     /// Hashes of revoked and replaced tokens, so jevd can answer `revoked`.
     #[serde(default)]
     revoked: Vec<String>,
+}
+
+/// The pending file: the requests that wait for a person.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PendingFile {
+    #[serde(default)]
+    requests: Vec<SavedRequest>,
+}
+
+/// One waiting request in the pending file.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SavedRequest {
+    /// The SHA-256 of the request ID, as lowercase hex. Never the ID itself.
+    id_sha256: String,
+    code: String,
+    name: String,
+    profile: Option<String>,
+    /// True when the request came from the `jev` binary.
+    cli: bool,
+    /// The end of the wait, in Unix seconds.
+    deadline: u64,
+}
+
+/// Where the waiting requests go, and the two clocks at the load, so that a
+/// deadline in memory can be written in Unix seconds.
+struct PendingStore {
+    path: PathBuf,
+    loaded: Instant,
+    loaded_unix: u64,
+}
+
+impl PendingStore {
+    /// The Unix time of `at`.
+    fn unix_at(&self, at: Instant) -> u64 {
+        match at.checked_duration_since(self.loaded) {
+            Some(after) => self.loaded_unix.saturating_add(after.as_secs()),
+            None => self
+                .loaded_unix
+                .saturating_sub(self.loaded.duration_since(at).as_secs()),
+        }
+    }
 }
 
 /// What `pair-status` reports.
@@ -177,6 +224,8 @@ pub struct Pairings {
     /// By the SHA-256 of the request ID, so a request loaded from the pending
     /// file, which holds no request ID, is found the same way.
     pending: HashMap<String, Pending>,
+    /// `None` until `load_pending`: until then, nothing writes a pending file.
+    pending_store: Option<PendingStore>,
 }
 
 /// The SHA-256 of a token, as lowercase hex.
@@ -204,6 +253,19 @@ fn new_code() -> String {
 /// A typed code, ready to compare: spaces trimmed, letters uppercased.
 pub fn normalize_code(code: &str) -> String {
     code.trim().to_ascii_uppercase()
+}
+
+fn valid_code(code: &str) -> bool {
+    code.len() == CODE_LENGTH && code.bytes().all(|b| CODE_ALPHABET.contains(&b))
+}
+
+/// Deletes a pending file that jevd cannot use, and returns the line for the log.
+fn discard(path: &Path, problem: &str) -> String {
+    let _ = std::fs::remove_file(path);
+    format!(
+        "cannot use {}: {problem}; jevd deletes it and starts with no waiting pairing requests",
+        path.display()
+    )
 }
 
 impl Pairings {
@@ -246,7 +308,117 @@ impl Pairings {
             clients,
             revoked: file.revoked.into_iter().collect(),
             pending: HashMap::new(),
+            pending_store: None,
         })
+    }
+
+    /// Reads the pending file, once, at start, and writes the waiting
+    /// requests to it from now on. `now` and `now_unix` are the same moment
+    /// on the two clocks. A file that jevd cannot use never stops it: the
+    /// file is deleted, and the returned line goes to the log.
+    pub fn load_pending(&mut self, path: &Path, now: Instant, now_unix: u64) -> Option<String> {
+        self.pending_store = Some(PendingStore {
+            path: path.to_path_buf(),
+            loaded: now,
+            loaded_unix: now_unix,
+        });
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(error) => return Some(discard(path, &error.to_string())),
+        };
+        let file: PendingFile = match serde_json::from_str(&text) {
+            Ok(file) => file,
+            // The place only: serde's own text can quote the file.
+            Err(error) => {
+                let problem = format!(
+                    "not a pending file (line {}, column {})",
+                    error.line(),
+                    error.column()
+                );
+                return Some(discard(path, &problem));
+            }
+        };
+        let mut codes = BTreeSet::new();
+        // Each entry with the seconds it has left, at most 10 minutes, so a
+        // clock moved back cannot keep a request alive longer.
+        let mut kept: Vec<(u64, SavedRequest)> = Vec::new();
+        for saved in file.requests {
+            if saved.deadline <= now_unix {
+                continue;
+            }
+            let valid = valid_name(&saved.name)
+                && saved.profile.as_deref().is_none_or(valid_name)
+                && valid_code(&saved.code);
+            if !valid || !codes.insert(saved.code.clone()) {
+                continue;
+            }
+            let left = (saved.deadline - now_unix).min(PENDING_EXPIRY.as_secs());
+            kept.push((left, saved));
+        }
+        // The latest deadlines stay, and the earliest go first.
+        kept.sort_by_key(|(left, _)| std::cmp::Reverse(*left));
+        kept.truncate(MAX_PENDING);
+        for (left, saved) in kept {
+            // jevd does not know the ID of a request from `jev` any more, and
+            // `jev` never polls with it, so it gets a new one.
+            let cli_id = saved.cli.then(|| random_hex(REQUEST_ID_HEX_LENGTH / 2));
+            let key = cli_id.as_deref().map_or(saved.id_sha256, hash_request_id);
+            if self.pending.contains_key(&key) {
+                continue;
+            }
+            self.pending.insert(
+                key,
+                Pending {
+                    code: saved.code,
+                    name: saved.name,
+                    profile: saved.profile,
+                    cli_id,
+                    deadline: now + Duration::from_secs(left),
+                    stage: Stage::Waiting,
+                },
+            );
+        }
+        // Write at once, so a dropped entry and a cut deadline stay so at the
+        // next start.
+        self.save_pending();
+        None
+    }
+
+    /// Writes the waiting requests to the pending file, after a load. A
+    /// failed write fails nothing: it goes to the log, and the next change
+    /// writes the whole file again.
+    fn save_pending(&self) {
+        let Some(store) = &self.pending_store else {
+            return;
+        };
+        let mut requests: Vec<SavedRequest> = self
+            .pending
+            .iter()
+            .filter(|(_, pending)| matches!(pending.stage, Stage::Waiting))
+            .map(|(key, pending)| SavedRequest {
+                id_sha256: key.clone(),
+                code: pending.code.clone(),
+                name: pending.name.clone(),
+                profile: pending.profile.clone(),
+                cli: pending.cli_id.is_some(),
+                deadline: store.unix_at(pending.deadline),
+            })
+            .collect();
+        requests.sort_by(|a, b| a.code.cmp(&b.code));
+        let written = serde_json::to_string_pretty(&PendingFile { requests })
+            .map_err(|error| error.to_string())
+            .and_then(|text| write_atomic(&store.path, &text).map_err(|error| error.to_string()));
+        if let Err(problem) = written {
+            crate::log::event(&format!("cannot save {}: {problem}", store.path.display()));
+        }
+    }
+
+    fn waiting_count(&self) -> usize {
+        self.pending
+            .values()
+            .filter(|pending| matches!(pending.stage, Stage::Waiting))
+            .count()
     }
 
     /// Write a new client list and revoked list to the file, and only then put
@@ -267,8 +439,14 @@ impl Pairings {
         Ok(())
     }
 
+    /// Drops expired requests. Writes the pending file when a waiting
+    /// request was among them.
     fn purge(&mut self, now: Instant) {
+        let waiting = self.waiting_count();
         self.pending.retain(|_, pending| now < pending.deadline);
+        if self.waiting_count() != waiting {
+            self.save_pending();
+        }
     }
 
     /// The key of the waiting request with `code`.
@@ -351,6 +529,7 @@ impl Pairings {
                 stage: Stage::Waiting,
             },
         );
+        self.save_pending();
         Ok((request_id, code))
     }
 
@@ -451,6 +630,8 @@ impl Pairings {
             token: cli_id.is_none().then(|| token.clone()),
         };
         pending.deadline = now + PENDING_EXPIRY;
+        // The request stops waiting. Its token never reaches the file.
+        self.save_pending();
         Ok(Approval {
             replaces: self.clients.contains_key(&name),
             name,
@@ -462,6 +643,7 @@ impl Pairings {
         self.purge(now);
         let key = self.waiting_key(code).ok_or(ErrorCode::BadRequest)?;
         self.pending.get_mut(&key).expect("found above").stage = Stage::Denied;
+        self.save_pending();
         Ok(())
     }
 
@@ -1032,7 +1214,7 @@ mod tests {
         assert_eq!(reloaded.authenticate(&token, T).unwrap().name, "app");
         assert!(
             reloaded.pending_list(now).is_empty(),
-            "pending requests live in memory only"
+            "the pairing file holds no pending request"
         );
     }
 
@@ -1433,5 +1615,321 @@ mod tests {
             pairings.status(&request_id, &known(), approved_at + PENDING_EXPIRY, T),
             Ok(PairState::Expired)
         );
+    }
+
+    // The pending file (the pairing-restart spec, section 7).
+
+    fn pending_path(dir: &tempfile::TempDir) -> PathBuf {
+        dir.path().join("state").join("pending.json")
+    }
+
+    /// The store in `dir`, as jevd loads it at `now`, the Unix time `unix`.
+    fn reload(dir: &tempfile::TempDir, now: Instant, unix: u64) -> Pairings {
+        let mut pairings = Pairings::load(&dir.path().join("pairings.json")).unwrap();
+        assert_eq!(pairings.load_pending(&pending_path(dir), now, unix), None);
+        pairings
+    }
+
+    /// The codes in the pending file, sorted.
+    fn codes_in_file(dir: &tempfile::TempDir) -> Vec<String> {
+        let text = std::fs::read_to_string(pending_path(dir)).unwrap();
+        let file: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let mut codes: Vec<String> = file["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|request| request["code"].as_str().unwrap().to_string())
+            .collect();
+        codes.sort();
+        codes
+    }
+
+    /// One socket request as the pending file holds it.
+    fn saved(code: &str, name: &str, deadline: u64) -> serde_json::Value {
+        serde_json::json!({
+            "id_sha256": hash_request_id(code),
+            "code": code,
+            "name": name,
+            "profile": null,
+            "cli": false,
+            "deadline": deadline,
+        })
+    }
+
+    fn write_pending(dir: &tempfile::TempDir, requests: Vec<serde_json::Value>) {
+        let path = pending_path(dir);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let text = serde_json::json!({ "requests": requests }).to_string();
+        std::fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn a_waiting_request_survives_a_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let t0 = Instant::now();
+        let mut pairings = reload(&dir, t0, T);
+        let (_, code) = pairings.start("app", Some("work"), false, t0).unwrap();
+        let t1 = t0 + Duration::from_secs(100);
+        let mut reloaded = reload(&dir, t1, T + 100);
+        assert_eq!(
+            reloaded.pending_list(t1),
+            [PendingView {
+                code,
+                name: "app".into(),
+                profile: Some("work".into())
+            }]
+        );
+        let almost = t0 + PENDING_EXPIRY - Duration::from_secs(1);
+        assert_eq!(reloaded.pending_list(almost).len(), 1);
+        assert!(
+            reloaded.pending_list(t0 + PENDING_EXPIRY).is_empty(),
+            "the deadline stays 10 minutes after the start"
+        );
+    }
+
+    #[test]
+    fn a_socket_client_polls_with_its_request_id_after_a_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let (request_id, code) = pairings.start("app", None, false, now).unwrap();
+        let mut reloaded = reload(&dir, now, T);
+        assert_eq!(
+            reloaded.status(&request_id, &known(), now, T),
+            Ok(PairState::Pending)
+        );
+        reloaded.approve(&code, "default", now).unwrap();
+        assert!(matches!(
+            reloaded.status(&request_id, &known(), now, T),
+            Ok(PairState::Approved(Some(_)))
+        ));
+    }
+
+    #[test]
+    fn a_repeat_cli_request_after_a_reload_gets_the_same_code_and_no_new_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let (old_id, code) = pairings.start("script", None, true, now).unwrap();
+        for i in 1..MAX_PENDING {
+            pairings
+                .start(&format!("app{i}"), None, false, now)
+                .unwrap();
+        }
+        let mut reloaded = reload(&dir, now, T);
+        let (new_id, again) = reloaded.start("script", None, true, now).unwrap();
+        assert_eq!(again, code);
+        assert_ne!(new_id, old_id, "jevd does not know the old ID after a load");
+        assert_eq!(
+            reloaded.start("script", None, true, now).unwrap(),
+            (new_id, code),
+            "the new ID stays"
+        );
+        assert_eq!(
+            reloaded.start("other", None, false, now),
+            Err(ErrorCode::RateLimited)
+        );
+    }
+
+    #[test]
+    fn jev_allow_approves_a_reloaded_cli_request_by_its_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let (_, code) = pairings.start("script", None, true, now).unwrap();
+        let mut reloaded = reload(&dir, now, T);
+        let approval = reloaded.approve(&code, "default", now).unwrap();
+        let cli = approval.cli.expect("a CLI request gets the token");
+        assert_eq!(
+            reloaded.status(&cli.request_id, &known(), now, T),
+            Ok(PairState::Approved(None))
+        );
+        assert_eq!(reloaded.authenticate(&cli.token, T).unwrap().name, "script");
+    }
+
+    #[test]
+    fn an_approval_that_was_not_collected_is_gone_after_a_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        pair(&mut pairings, "other", now);
+        let pairing_file = dir.path().join("pairings.json");
+        let before = std::fs::read(&pairing_file).unwrap();
+        let (request_id, code) = pairings.start("app", None, false, now).unwrap();
+        pairings.approve(&code, "default", now).unwrap();
+        let mut reloaded = reload(&dir, now, T);
+        assert_eq!(
+            reloaded.status(&request_id, &known(), now, T),
+            Ok(PairState::Expired)
+        );
+        assert!(reloaded.pending_list(now).is_empty());
+        assert_eq!(
+            std::fs::read(&pairing_file).unwrap(),
+            before,
+            "the pairings file has no new entry"
+        );
+    }
+
+    #[test]
+    fn a_load_drops_an_expired_entry_and_cuts_a_far_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        write_pending(
+            &dir,
+            vec![
+                saved("AAAAAAAA", "old", T),
+                saved("BBBBBBBB", "far", T + 3600),
+            ],
+        );
+        let t0 = Instant::now();
+        let mut pairings = reload(&dir, t0, T);
+        assert_eq!(
+            codes_in_file(&dir),
+            ["BBBBBBBB"],
+            "the load writes the file"
+        );
+        let text = std::fs::read_to_string(pending_path(&dir)).unwrap();
+        let file: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(file["requests"][0]["deadline"], T + 600);
+        let almost = t0 + PENDING_EXPIRY - Duration::from_secs(1);
+        assert_eq!(pairings.pending_list(almost).len(), 1);
+        assert!(pairings.pending_list(t0 + PENDING_EXPIRY).is_empty());
+    }
+
+    #[test]
+    fn a_load_keeps_the_16_latest_valid_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let code = |i: usize| (CODE_ALPHABET[i] as char).to_string().repeat(CODE_LENGTH);
+        let mut requests: Vec<serde_json::Value> = (0..MAX_PENDING + 2)
+            .map(|i| saved(&code(i), &format!("app{i}"), T + 100 + i as u64))
+            .collect();
+        requests.push(saved("XXXXXXXX", "Bad Name", T + 500));
+        let mut bad_profile = saved("YYYYYYYY", "bad-profile", T + 500);
+        bad_profile["profile"] = "Bad".into();
+        requests.push(bad_profile);
+        requests.push(saved("ABC", "short-code", T + 500));
+        requests.push(saved("ABCDEFG0", "zero-in-code", T + 500));
+        requests.push(saved(&code(MAX_PENDING + 1), "copy", T + 590));
+        write_pending(&dir, requests);
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let mut names: Vec<String> = pairings
+            .pending_list(now)
+            .into_iter()
+            .map(|view| view.name)
+            .collect();
+        names.sort();
+        let mut expected: Vec<String> = (2..MAX_PENDING + 2).map(|i| format!("app{i}")).collect();
+        expected.sort();
+        assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn a_file_that_jevd_cannot_use_is_deleted_and_logged() {
+        let unknown_field = r#"{"requests": [{"id_sha256": "aa", "code": "AAAAAAAA", "name": "a", "profile": null, "cli": false, "deadline": 1900000000, "token": "x"}]}"#;
+        let wrong_type = r#"{"requests": [{"id_sha256": "aa", "code": "AAAAAAAA", "name": "a", "profile": null, "cli": false, "deadline": "soon"}]}"#;
+        let cases: [&[u8]; 5] = [
+            b"not json",
+            br#"{"requests": [], "extra": 1}"#,
+            unknown_field.as_bytes(),
+            wrong_type.as_bytes(),
+            // Not UTF-8, so it cannot be read as text.
+            &[0xff, 0xfe, 0x00],
+        ];
+        for contents in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let path = pending_path(&dir);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, contents).unwrap();
+            let now = Instant::now();
+            let mut pairings = Pairings::load(&dir.path().join("pairings.json")).unwrap();
+            let problem = pairings
+                .load_pending(&path, now, T)
+                .expect("one line for the log");
+            assert!(problem.contains("pending.json"), "{problem}");
+            assert!(!problem.contains('\n'), "{problem}");
+            assert!(
+                !problem.contains("soon"),
+                "no text from the file: {problem}"
+            );
+            assert!(pairings.pending_list(now).is_empty());
+            assert!(!path.exists(), "the file is deleted: {problem}");
+            assert!(pairings.start("app", None, false, now).is_ok());
+        }
+    }
+
+    #[test]
+    fn the_pending_file_never_holds_a_request_id_or_a_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let (socket_id, socket_code) = pairings.start("app", None, false, now).unwrap();
+        let (cli_id, cli_code) = pairings.start("script", None, true, now).unwrap();
+        let text = std::fs::read_to_string(pending_path(&dir)).unwrap();
+        assert!(!text.contains(&socket_id) && !text.contains(&cli_id));
+        assert!(text.contains(&hash_request_id(&socket_id)));
+        pairings.approve(&socket_code, "default", now).unwrap();
+        let approval = pairings.approve(&cli_code, "default", now).unwrap();
+        let cli = approval.cli.unwrap();
+        pairings.start("waits", None, false, now).unwrap();
+        let text = std::fs::read_to_string(pending_path(&dir)).unwrap();
+        assert!(!text.contains(&socket_id) && !text.contains(&cli.request_id));
+        assert!(!text.contains(&cli.token) && !text.contains(TOKEN_PREFIX));
+    }
+
+    #[test]
+    fn a_failed_write_of_the_pending_file_fails_no_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let path = pending_path(&dir);
+        // A folder that is not empty, where the file goes, so every write fails.
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(path.join("inside"), "x").unwrap();
+        let (request_id, _) = pairings.start("app", None, false, now).unwrap();
+        assert_eq!(
+            pairings.status(&request_id, &known(), now, T),
+            Ok(PairState::Pending)
+        );
+        std::fs::remove_dir_all(&path).unwrap();
+        pairings.start("other", None, false, now).unwrap();
+        let mut reloaded = reload(&dir, now, T);
+        assert_eq!(
+            reloaded.pending_list(now).len(),
+            2,
+            "the next change writes the whole file"
+        );
+    }
+
+    #[test]
+    fn each_change_to_the_waiting_requests_writes_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let t0 = Instant::now();
+        let mut pairings = reload(&dir, t0, T);
+        let (_, a) = pairings.start("a", None, false, t0).unwrap();
+        let (_, b) = pairings.start("b", None, false, t0).unwrap();
+        let later = t0 + Duration::from_secs(60);
+        let (_, c) = pairings.start("c", None, false, later).unwrap();
+        let mut all = vec![a.clone(), b.clone(), c.clone()];
+        all.sort();
+        assert_eq!(codes_in_file(&dir), all);
+        pairings.approve(&a, "default", t0).unwrap();
+        let mut left = vec![b.clone(), c.clone()];
+        left.sort();
+        assert_eq!(codes_in_file(&dir), left);
+        pairings.deny(&b, t0).unwrap();
+        assert_eq!(codes_in_file(&dir), [c]);
+        pairings.pending_list(later + PENDING_EXPIRY);
+        assert!(codes_in_file(&dir).is_empty(), "an expiry writes too");
+    }
+
+    #[test]
+    fn a_repeat_cli_request_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let first = pairings.start("script", None, true, now).unwrap();
+        std::fs::remove_file(pending_path(&dir)).unwrap();
+        assert_eq!(pairings.start("script", None, true, now).unwrap(), first);
+        assert!(!pending_path(&dir).exists());
     }
 }
