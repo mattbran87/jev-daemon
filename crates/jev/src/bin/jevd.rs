@@ -57,6 +57,7 @@ async fn serve(paths: Paths) -> ExitCode {
     let config = Config {
         settings_file: paths.settings_file(),
         pairing_file: paths.pairing_file(),
+        pending_file: paths.pending_file(),
         store: Arc::new(OsKeyring),
         jev,
     };

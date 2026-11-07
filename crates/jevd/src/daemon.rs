@@ -7,7 +7,8 @@
 //! The pairing file is written under the lock: a commit, a revoke, a
 //! set-limit, and a last-used time (at most once a minute per client), each
 //! with an fsync. For a per-user daemon that is a short, rare wait, and it
-//! keeps memory and disk in one order.
+//! keeps memory and disk in one order. The pending file is too, at each
+//! change to the waiting pairing requests.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -38,6 +39,8 @@ pub enum Peer {
 pub struct Config {
     pub settings_file: PathBuf,
     pub pairing_file: PathBuf,
+    /// The waiting pairing requests, so they survive a restart.
+    pub pending_file: PathBuf,
     pub store: Arc<dyn KeyStore>,
     /// Built once at start. A change of proxy settings needs a restart.
     pub jev: JevClient,
@@ -102,12 +105,16 @@ pub(crate) fn unix_now() -> u64 {
 const SAVE_FAILED: &str = "jevd cannot save the pairing file";
 
 impl Daemon {
-    /// Reads the settings file and the pairing file. Reads no key.
+    /// Reads the settings file, the pairing file, and the pending file.
+    /// Reads no key. A pending file that jevd cannot use never stops it.
     pub fn new(config: Config) -> Result<Arc<Daemon>, String> {
         let settings = Settings::load(&config.settings_file)?;
-        let pairings = Pairings::load(&config.pairing_file)?;
-        let keys = KeyCache::new(settings.key_cache);
+        let mut pairings = Pairings::load(&config.pairing_file)?;
         let now = Instant::now();
+        if let Some(problem) = pairings.load_pending(&config.pending_file, now, unix_now()) {
+            crate::log::event(&problem);
+        }
+        let keys = KeyCache::new(settings.key_cache);
         Ok(Arc::new(Daemon {
             state: Mutex::new(State {
                 settings,
@@ -374,6 +381,7 @@ pub(crate) mod tests {
         pub(crate) daemon: Arc<Daemon>,
         pub(crate) settings_file: PathBuf,
         pub(crate) pairing_file: PathBuf,
+        pub(crate) pending_file: PathBuf,
     }
 
     /// A daemon with the profiles `default` and `work`, a keyring of
@@ -382,6 +390,7 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         let settings_file = dir.path().join("config.toml");
         let pairing_file = dir.path().join("pairings.json");
+        let pending_file = dir.path().join("pending.json");
         let mut settings = Settings::default();
         settings.add_profile("default").unwrap();
         settings.add_profile("work").unwrap();
@@ -392,6 +401,7 @@ pub(crate) mod tests {
         let daemon = Daemon::new(Config {
             settings_file: settings_file.clone(),
             pairing_file: pairing_file.clone(),
+            pending_file: pending_file.clone(),
             store,
             jev,
         })
@@ -401,6 +411,7 @@ pub(crate) mod tests {
             daemon,
             settings_file,
             pairing_file,
+            pending_file,
         }
     }
 
@@ -684,6 +695,62 @@ pub(crate) mod tests {
         );
         let clients = call(&f.daemon, Peer::Jev, Request::Clients).await;
         assert_eq!(clients.data["clients"][0]["name"], "script");
+    }
+
+    /// A second daemon on the files of `f`, as after a restart.
+    fn restart(f: &Fixture) -> Arc<Daemon> {
+        let jev = JevClient::with_endpoint(
+            "http://127.0.0.1:9/",
+            Duration::from_secs(5),
+            Duration::from_millis(10),
+        )
+        .unwrap();
+        Daemon::new(Config {
+            settings_file: f.settings_file.clone(),
+            pairing_file: f.pairing_file.clone(),
+            pending_file: f.pending_file.clone(),
+            store: Arc::new(MemoryKeyring::new()),
+            jev,
+        })
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_waiting_socket_request_survives_a_restart() {
+        let f = fixture();
+        let reply = call(
+            &f.daemon,
+            Peer::Other,
+            Request::Pair {
+                name: "app".into(),
+                profile: None,
+            },
+        )
+        .await;
+        let request_id = reply.data["request_id"].as_str().unwrap().to_string();
+        let code = reply.data["code"].as_str().unwrap().to_string();
+        let daemon = restart(&f);
+        let status = Request::PairStatus { request_id };
+        let waiting = call(&daemon, Peer::Other, status.clone()).await;
+        assert_eq!(waiting.data["state"], "pending");
+        let approve = Request::Approve {
+            code,
+            profile: "default".into(),
+        };
+        assert!(call(&daemon, Peer::Jev, approve).await.ok);
+        let collected = call(&daemon, Peer::Other, status).await;
+        assert_eq!(collected.data["state"], "approved");
+        assert!(collected.data["token"].is_string());
+    }
+
+    #[tokio::test]
+    async fn a_pending_file_that_cannot_be_used_does_not_stop_the_start() {
+        let f = fixture();
+        std::fs::write(&f.pending_file, "not json").unwrap();
+        let daemon = restart(&f);
+        let pending = call(&daemon, Peer::Jev, Request::Pending).await;
+        assert_eq!(pending.data["requests"], json!([]));
+        assert!(!f.pending_file.exists(), "jevd deletes the file");
     }
 
     #[tokio::test]

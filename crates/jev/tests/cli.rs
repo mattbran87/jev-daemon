@@ -76,27 +76,33 @@ async fn setup() -> Setup {
 /// A home with a daemon running in this process.
 async fn running() -> Setup {
     let mut setup = setup().await;
-    let jev = JevClient::with_endpoint(
-        &setup.jev_url,
-        Duration::from_secs(5),
-        Duration::from_millis(10),
-    )
-    .unwrap();
-    let daemon = Daemon::new(Config {
-        settings_file: setup.paths.settings_file(),
-        pairing_file: setup.paths.pairing_file(),
-        store: setup.store.clone(),
-        jev,
-    })
-    .unwrap();
-    let listener = bind(&setup.paths).unwrap();
-    let admin = AdminCheck::new(&std::env::current_exe().unwrap());
-    // run() installs signal handlers in this test process; every wait here has a limit.
-    setup.daemon = Some(tokio::spawn(jevd::run::run(daemon, listener, admin)));
+    setup.serve();
     setup
 }
 
 impl Setup {
+    /// Starts a daemon in this process, on the files of this home.
+    fn serve(&mut self) {
+        let jev = JevClient::with_endpoint(
+            &self.jev_url,
+            Duration::from_secs(5),
+            Duration::from_millis(10),
+        )
+        .unwrap();
+        let daemon = Daemon::new(Config {
+            settings_file: self.paths.settings_file(),
+            pairing_file: self.paths.pairing_file(),
+            pending_file: self.paths.pending_file(),
+            store: self.store.clone(),
+            jev,
+        })
+        .unwrap();
+        let listener = bind(&self.paths).unwrap();
+        let admin = AdminCheck::new(&std::env::current_exe().unwrap());
+        // run() installs signal handlers in this test process; every wait here has a limit.
+        self.daemon = Some(tokio::spawn(jevd::run::run(daemon, listener, admin)));
+    }
+
     /// Runs one `jev` command line off the runtime, as the blocking CLI does.
     async fn jev(&self, line: &[&str], terminal: ScriptedTerminal, stdin: Option<&str>) -> Ran {
         self.jev_with(self.store.clone(), line, terminal, stdin)
@@ -292,6 +298,36 @@ async fn start_status_and_stop_with_a_daemon() {
         .await
         .expect("jevd stopped")
         .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_waiting_request_survives_a_jevd_restart() {
+    let mut setup = running().await;
+    setup.add_key("default").await;
+    let pending = setup
+        .quiet(&["pair", "--name", "script", "--no-prompt", "--json"])
+        .await;
+    assert_eq!(pending.code, 3, "{}", pending.out);
+    let code = pending.json()["pair_code"].as_str().unwrap().to_string();
+    let stop = setup.quiet(&["stop"]).await;
+    assert_eq!(stop.code, 0, "{}", stop.err);
+    let task = setup.daemon.take().unwrap();
+    tokio::time::timeout(Duration::from_secs(10), task)
+        .await
+        .expect("jevd stopped")
+        .unwrap();
+    setup.serve();
+    let allow = setup
+        .jev(
+            &["allow", &code],
+            ScriptedTerminal::answering(&["", "y"]),
+            Some(""),
+        )
+        .await;
+    assert_eq!(allow.code, 0, "{} {:?}", allow.err, allow.shown);
+    assert!(setup.token("script").is_some(), "jev wrote the token");
+    let clients = setup.quiet(&["clients", "--json"]).await;
+    assert_eq!(clients.json()["clients"][0]["name"], "script");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

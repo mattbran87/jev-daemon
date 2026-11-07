@@ -44,6 +44,7 @@ async fn start(jev_url: &str, admin: &Path, edit: impl FnOnce(&mut Settings)) ->
     let daemon = Daemon::new(Config {
         settings_file: paths.settings_file(),
         pairing_file: paths.pairing_file(),
+        pending_file: paths.pending_file(),
         store: store.clone(),
         jev,
     })
