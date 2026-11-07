@@ -47,6 +47,7 @@ A repeat `jev pair` that gets back an existing request changes nothing, so it wr
 - It caps each `deadline` at 10 minutes from the load, so a clock moved back cannot keep a request alive longer than 10 minutes.
 - It keeps at most 16 entries, the limit on waiting requests. It drops the rest, those with the earliest deadlines first.
 - It drops an entry with a name, a profile, or a code that is not valid, and an entry whose code another entry already uses.
+- After a load that finds a file, it writes the file again at once, so a cut deadline or a dropped entry does not come back at the next start.
 
 **A file that `jevd` cannot use does not stop it.** If the file cannot be read, is not JSON, or has an unknown field or a field of the wrong type, `jevd` writes one line to its log, deletes the file, and starts with no waiting requests. This is the opposite of the pairings file, which refuses to load when it is damaged. A lost waiting request costs one new pairing, so `jevd` must never fail to start because of it.
 

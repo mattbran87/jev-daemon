@@ -186,7 +186,7 @@ The keyring write comes before the commit. In the other order, a locked keyring 
 | Pending expiry | 10 minutes. Waiting requests are also saved to `pending.json`, and survive a restart. Approved requests that are not collected live in memory only. |
 | Pending requests at once | 16. Waiting requests and approved requests that are not committed both count. |
 | Full pending list | The next `pair` gets `rate-limited` |
-| Repeat CLI request | A `pair` from `jev` for a name that already has a waiting request from `jev` gets that request's `request_id` and `code`. Its expiry does not restart. A request from a socket client is never shared. |
+| Repeat CLI request | A `pair` from `jev` for a name that already has a waiting request from `jev` gets that request's `request_id` and `code`, or a new `request_id` after a `jevd` restart (see the [pairing-restart spec](2026-11-07-pairing-restart-design.md)). Its expiry does not restart. A request from a socket client is never shared. |
 | Unknown request ID | `pair-status` reports `expired`, the same as a real expiry |
 | Collection window | 10 minutes from approval, for a socket client. After it, `pair-status` reports `expired`, and `jevd` commits nothing. |
 | Name rule | Lowercase letters `a-z`, digits, and hyphens only. 1 to 64 characters. The first character cannot be a hyphen. A hyphen may be the last character. |
