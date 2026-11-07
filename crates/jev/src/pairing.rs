@@ -110,6 +110,13 @@ pub fn pair(env: &mut Env, json: bool, name: &str, profile: Option<&str>, prompt
     approve(env, json, &mut connection, &request)
 }
 
+/// `jev allow` with no code, when no request waits. Each error says what to do next.
+const NONE_WAITS: &str =
+    "no pairing request waits; a request lasts 10 minutes, so ask the client to try again";
+/// `jev allow <code>`, when no waiting request has the code.
+const NO_SUCH_CODE: &str =
+    "no waiting request has that code; run jev allow with no code to see the waiting requests";
+
 /// `jev allow [<code>]`: show the waiting requests, and approve one.
 pub fn allow(env: &mut Env, json: bool, code: Option<&str>) -> Outcome {
     need_terminal(env, "jev allow")?;
@@ -119,10 +126,7 @@ pub fn allow(env: &mut Env, json: bool, code: Option<&str>) -> Outcome {
         Some(code) => code.to_string(),
         None => {
             if list.is_empty() {
-                return Err(Failure::new(
-                    ErrorCode::BadRequest,
-                    "no pairing request waits",
-                ));
+                return Err(Failure::new(ErrorCode::BadRequest, NONE_WAITS));
             }
             say(env, "Waiting pairing requests:")?;
             for request in &list {
@@ -136,7 +140,7 @@ pub fn allow(env: &mut Env, json: bool, code: Option<&str>) -> Outcome {
     let request = list
         .into_iter()
         .find(|request| request.code == code)
-        .ok_or_else(|| Failure::new(ErrorCode::BadRequest, "no waiting request has that code"))?;
+        .ok_or_else(|| Failure::new(ErrorCode::BadRequest, NO_SUCH_CODE))?;
     approve(env, json, &mut connection, &request)
 }
 

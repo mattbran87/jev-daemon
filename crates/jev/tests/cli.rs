@@ -825,7 +825,9 @@ async fn allow_refuses_no_request_a_wrong_code_and_an_unknown_profile() {
         .await;
     assert_eq!(none.code, 9);
     assert!(
-        none.err.contains("no pairing request waits"),
+        none.err.contains(
+            "no pairing request waits; a request lasts 10 minutes, so ask the client to try again"
+        ),
         "{}",
         none.err
     );
@@ -839,7 +841,13 @@ async fn allow_refuses_no_request_a_wrong_code_and_an_unknown_profile() {
         )
         .await;
     assert_eq!(wrong.code, 9);
-    assert!(wrong.err.contains("no waiting request"), "{}", wrong.err);
+    assert!(
+        wrong.err.contains(
+            "no waiting request has that code; run jev allow with no code to see the waiting requests"
+        ),
+        "{}",
+        wrong.err
+    );
     let unknown = setup
         .jev(
             &["allow", &code],
