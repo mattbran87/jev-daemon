@@ -698,6 +698,7 @@ pub(crate) mod tests {
     }
 
     /// A second daemon on the files of `f`, as after a restart.
+    /// After this call, a test must not use the old daemon of `f`: both write the same pending file.
     fn restart(f: &Fixture) -> Arc<Daemon> {
         let jev = JevClient::with_endpoint(
             "http://127.0.0.1:9/",

@@ -260,8 +260,18 @@ fn valid_code(code: &str) -> bool {
 }
 
 /// Deletes a pending file that jevd cannot use, and returns the line for the log.
+/// The line never holds text from the file.
 fn discard(path: &Path, problem: &str) -> String {
-    let _ = std::fs::remove_file(path);
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return format!(
+                "cannot use {}: {problem}; jevd cannot delete it ({error}) and starts with no waiting pairing requests",
+                path.display()
+            )
+        }
+    }
     format!(
         "cannot use {}: {problem}; jevd deletes it and starts with no waiting pairing requests",
         path.display()
@@ -1859,6 +1869,23 @@ mod tests {
             assert!(!path.exists(), "the file is deleted: {problem}");
             assert!(pairings.start("app", None, false, now).is_ok());
         }
+    }
+
+    #[test]
+    fn a_pending_file_that_cannot_be_deleted_is_logged_and_jevd_starts_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = pending_path(&dir);
+        std::fs::create_dir_all(&path).unwrap();
+        let now = Instant::now();
+        let mut pairings = Pairings::load(&dir.path().join("pairings.json")).unwrap();
+        let problem = pairings
+            .load_pending(&path, now, T)
+            .expect("one line for the log");
+        assert!(problem.contains("pending.json"), "{problem}");
+        assert!(problem.contains("cannot delete it"), "{problem}");
+        assert!(!problem.contains("jevd deletes it"), "{problem}");
+        assert!(!problem.contains('\n'), "{problem}");
+        assert!(pairings.pending_list(now).is_empty());
     }
 
     #[test]
