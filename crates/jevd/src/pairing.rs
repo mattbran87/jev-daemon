@@ -1740,6 +1740,10 @@ mod tests {
         let mut reloaded = reload(&dir, now, T);
         let approval = reloaded.approve(&code, "default", now).unwrap();
         let cli = approval.cli.expect("a CLI request gets the token");
+        assert!(
+            !codes_in_file(&dir).contains(&code),
+            "an approved request leaves the pending file"
+        );
         assert_eq!(
             reloaded.status(&cli.request_id, &known(), now, T),
             Ok(PairState::Approved(None))
