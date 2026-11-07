@@ -16,7 +16,7 @@ pub const HOME_VAR: &str = "JEV_HOME";
 pub struct Paths {
     /// The settings file and the pairing file.
     pub config_dir: PathBuf,
-    /// The log file.
+    /// The log file, and the waiting pairing requests.
     pub state_dir: PathBuf,
     /// The PID file, and on Unix the socket.
     pub runtime_dir: PathBuf,
@@ -77,6 +77,11 @@ impl Paths {
 
     pub fn log_file(&self) -> PathBuf {
         self.state_dir.join("jevd.log")
+    }
+
+    /// The pairing requests that wait for a person. Only `jevd` writes it.
+    pub fn pending_file(&self) -> PathBuf {
+        self.state_dir.join("pending.json")
     }
 
     pub fn pid_file(&self) -> PathBuf {
@@ -266,6 +271,10 @@ mod tests {
             home.join("config").join("pairings.json")
         );
         assert_eq!(paths.log_file(), home.join("state").join("jevd.log"));
+        assert_eq!(
+            paths.pending_file(),
+            home.join("state").join("pending.json")
+        );
         assert_eq!(paths.pid_file(), home.join("run").join("jevd.pid"));
         #[cfg(unix)]
         assert_eq!(paths.socket, home.join("run").join("jevd.sock"));
