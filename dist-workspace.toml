@@ -21,6 +21,10 @@ install-updater = false
 # no release, so the release build is tested before a tag (plan 6).
 pr-run-mode = "upload"
 
+# GitHub retired the macos-14 image that dist picks by default. macos-15 is also Apple Silicon.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
+
 # Each action that the release workflow uses, pinned to a commit (spec section 8).
 [dist.github-action-commits]
 "actions/checkout" = "d23441a48e516b6c34aea4fa41551a30e30af803" # v6.1.0

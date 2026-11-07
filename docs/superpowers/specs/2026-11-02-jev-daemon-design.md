@@ -372,7 +372,7 @@ The mod finds `jev` on the PATH. The plugin option `jevPath` overrides that, and
 
 - Windows, Linux, and macOS: `cargo fmt --check`, `cargo clippy` with warnings as errors, `cargo test --locked`, on Rust 1.99.1. CI pins its toolchain, so a new Rust release cannot fail a commit that passed.
 - The Linux `rust` job and the `msrv` job install `libgtk-3-dev` and `libayatana-appindicator3-dev` first. `jev-tray` needs GTK 3 to build, and it loads the AppIndicator library when it runs.
-- The macOS jobs run on `macos-14`, an Apple Silicon runner.
+- The macOS jobs run on `macos-15`, an Apple Silicon runner. GitHub retired `macos-14`.
 - The MSRV, Rust 1.85: `cargo check --workspace --locked`, with no test targets, because `wiremock`, a test-only dependency, needs Rust 1.88.
 - The mod, on the 3 systems, with Claude Code 2.1.300: `claude plugin validate` on the marketplace and the plugin, and `claude plugin test`. `tsc` runs locally only: `/plugin-types` works only in an interactive session, and its file is Claude Code's own text, so the repo does not hold it.
 - `cargo deny` for licenses, security advisories, bans, and sources, with `deny.toml`. It ignores 3 "unmaintained" notices for the `zbus` 4 crates (RUSTSEC-2026-0370, -0371, -0372), each with its reason, until the MSRV allows `keyring` 4. It also ignores the "unmaintained" notice for `proc-macro-error` (RUSTSEC-2024-0370), a build-time crate that `jev-tray` gets on Linux through `gtk` 0.18, until the MSRV allows `tray-icon` 0.25. A license exception allows `MPL-2.0` for the crate `option-ext` only. `jev-tray` also gets that crate on Linux.
