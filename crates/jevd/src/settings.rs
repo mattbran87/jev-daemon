@@ -51,7 +51,8 @@ struct Raw {
 impl Default for Settings {
     fn default() -> Settings {
         Settings {
-            idle_timeout: Period::After(Duration::from_secs(2 * 3600)),
+            // jevd uses little memory and no CPU while it waits, so by default it keeps running.
+            idle_timeout: Period::Off,
             key_cache: Duration::from_secs(2 * 3600),
             rate_limit: DEFAULT_RATE_LIMIT,
             redact_strict: false,
@@ -231,7 +232,7 @@ mod tests {
     #[test]
     fn defaults_match_the_spec() {
         let settings = Settings::default();
-        assert_eq!(settings.get("idle-timeout").unwrap(), "2h");
+        assert_eq!(settings.get("idle-timeout").unwrap(), "off");
         assert_eq!(settings.get("key-cache").unwrap(), "2h");
         assert_eq!(settings.get("rate-limit").unwrap(), "120/60");
         assert_eq!(settings.get("redact-strict").unwrap(), "off");
@@ -312,7 +313,8 @@ key = \"tsk-secret-value-123\"
 
     #[test]
     fn loosening_changes_are_marked() {
-        let base = Settings::default();
+        // An idle stop of 2h, so a longer one and `off` count as looser.
+        let base = change(&Settings::default(), "idle-timeout", "2h").settings;
         let loosening = [
             ("rate-limit", "200/60"),
             ("rate-limit", "120/30"),
@@ -371,7 +373,7 @@ key = \"tsk-secret-value-123\"
     fn an_unchanged_value_does_not_loosen() {
         let base = Settings::default();
         assert!(!change(&base, "key-cache", "2h").loosens);
-        assert!(!change(&base, "idle-timeout", "2h").loosens);
+        assert!(!change(&base, "idle-timeout", "off").loosens);
         assert!(!change(&base, "redact-strict", "off").loosens);
         let strict = change(&base, "redact-strict", "on").settings;
         assert!(!change(&strict, "redact-strict", "on").loosens);

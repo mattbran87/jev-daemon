@@ -344,7 +344,7 @@ fn open(paths: &Paths) -> Result<Stream, Failed> {
 /// Windows starts every child with handle inheritance on, so a started jevd
 /// would get the caller's own standard handles. A caller that reads this
 /// process's output through a pipe (a script's `$(jev start)`, a Node
-/// `spawn`) would then wait until jevd exits, up to its idle timeout.
+/// `spawn`) would then wait until jevd exits.
 #[cfg(windows)]
 struct NoInherit {
     cleared: Vec<windows_sys::Win32::Foundation::HANDLE>,

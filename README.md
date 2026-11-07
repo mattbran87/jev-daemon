@@ -2,7 +2,7 @@
 
 jev lets local programs ask TypeSafe's Jev model while one background process, `jevd`, holds your TypeSafe keys. A program pairs once, and you approve it with `jev allow` in a terminal. `jevd` then checks each request for shape, rate limit, and secrets before it sends anything.
 
-- `jevd`: the per-user daemon. Programs and the `jev` CLI start it when they need it, and it exits after 2 hours with no use.
+- `jevd`: the per-user daemon. Programs and the `jev` CLI start it when they need it, and it keeps running until you stop it. To stop it after a period with no use, run `jev config set idle-timeout 2h`.
 - `jev`: the CLI. It manages keys, pairing, and settings, and `jev ask` sends a request.
 - `jev-tray`: a tray icon that shows whether `jevd` runs.
 - `plugins/claude-code`: a Claude Code plugin that gives other plugins `$.jev`.

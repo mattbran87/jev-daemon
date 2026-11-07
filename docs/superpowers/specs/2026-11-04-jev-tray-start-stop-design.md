@@ -50,7 +50,7 @@ A failure is one of these:
 ## 5. Limits
 
 - **Stop does not last.** After **Stop jevd**, the next request from a plugin or from `jev` starts `jevd` again. The icon then shows on again within 5 seconds.
-- **`jevd` also stops by itself** after 2 hours with no use. The label follows at the next check.
+- **`jevd` can also stop by itself** when someone sets `idle-timeout`. The label follows at the next check.
 - **The item needs `jev` in the same folder as `jev-tray`.** `cargo install`, each release archive, and each installer put all three programs in one folder. If you move `jev-tray` alone, the item fails with `cannot find jev next to jev-tray`. The icon and **Start at login** still work.
 - **A command that hangs** keeps the item gray for at most 30 seconds.
 

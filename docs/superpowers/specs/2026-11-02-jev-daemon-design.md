@@ -18,7 +18,7 @@ The Python prototype, jev-service, stays private. It serves as the reference for
 | 4 | Approval surface in v1: interactive `jev allow` on a terminal. One-step `jev pair` on a terminal also approves. No OS dialog. The Claude Code mod is not an approval surface. |
 | 5 | Keys live in the OS keyring, as named profiles. Each client binds to one profile, picked by the person at approval. |
 | 6 | Key commands: `jev key add`, `jev key remove`, `jev key list`. No account sign-in exists. |
-| 7 | Idle exit after 2 hours by default. The person can change the period or turn it `off`. |
+| 7 | No idle exit by default: `jevd` uses little memory and no CPU while it waits. The person can set a period. |
 | 8 | `jevd` caches each key after its first use and wipes it after 2 hours with no use of that key. The cache period cannot be `off`. |
 | 9 | One request in flight per connection. Parallel work uses more connections. |
 | 10 | Admin messages are accepted only from the exact full path of the `jev` binary next to `jevd`. |
@@ -214,7 +214,7 @@ The values in steps 1, 3, 5, 6, and 7 come from the prototype's `jevservice/name
 
 | Setting | Default | Loosening change (needs a terminal and a typed `y`) |
 | --- | --- | --- |
-| `idle-timeout` | `2h` | A longer period, or `off` |
+| `idle-timeout` | `off` | A longer period, or `off` |
 | `key-cache` | `2h` (`off` not allowed) | A longer period |
 | `rate-limit` | `120/60` | A higher count, or a higher average rate |
 | `redact-strict` | `off` | `off` |
