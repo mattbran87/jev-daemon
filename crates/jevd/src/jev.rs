@@ -340,8 +340,7 @@ mod tests {
 
     #[test]
     fn strict_redaction_reaches_the_questions() {
-        let questions =
-            json!({"q": {"type": "noul", "instructions": "is it?", "password": "hunter2 has spaces"}});
+        let questions = json!({"q": {"type": "noul", "instructions": "is it?", "password": "hunter2 has spaces"}});
         assert_eq!(
             request_body(&json!({}), &questions, KEY, false)["questions"]["q"]["password"],
             "hunter2 has spaces"

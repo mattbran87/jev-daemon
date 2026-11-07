@@ -417,7 +417,8 @@ mod tests {
         env
     }
 
-    const ONE_QUESTION: &str = r#"{"state":"s","questions":{"q":{"type":"noul","instructions":"x"}}}"#;
+    const ONE_QUESTION: &str =
+        r#"{"state":"s","questions":{"q":{"type":"noul","instructions":"x"}}}"#;
 
     #[test]
     fn a_stdin_over_the_line_cap_is_too_large_before_any_connection() {
