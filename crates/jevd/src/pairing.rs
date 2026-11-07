@@ -148,10 +148,12 @@ struct Pending {
     code: String,
     name: String,
     profile: Option<String>,
-    /// True when the request came from the `jev` binary.
-    cli: bool,
-    /// The start, or the approval once approved.
-    since: Instant,
+    /// The request ID of a request from the `jev` binary: a repeat `start`
+    /// and `approve` give it back. `None` for a socket client, which alone
+    /// holds its ID.
+    cli_id: Option<String>,
+    /// The end of the wait, or of the collection window once approved.
+    deadline: Instant,
     stage: Stage,
 }
 
@@ -172,12 +174,19 @@ pub struct Pairings {
     path: PathBuf,
     clients: BTreeMap<String, Client>,
     revoked: BTreeSet<String>,
+    /// By the SHA-256 of the request ID, so a request loaded from the pending
+    /// file, which holds no request ID, is found the same way.
     pending: HashMap<String, Pending>,
 }
 
 /// The SHA-256 of a token, as lowercase hex.
 pub fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
+}
+
+/// The SHA-256 of a request ID, as lowercase hex.
+fn hash_request_id(request_id: &str) -> String {
+    hex::encode(Sha256::digest(request_id.as_bytes()))
 }
 
 fn random_hex(bytes: usize) -> String {
@@ -259,16 +268,16 @@ impl Pairings {
     }
 
     fn purge(&mut self, now: Instant) {
-        self.pending
-            .retain(|_, pending| now.duration_since(pending.since) < PENDING_EXPIRY);
+        self.pending.retain(|_, pending| now < pending.deadline);
     }
 
-    fn waiting_id(&self, code: &str) -> Option<String> {
+    /// The key of the waiting request with `code`.
+    fn waiting_key(&self, code: &str) -> Option<String> {
         let code = normalize_code(code);
         self.pending
             .iter()
             .find(|(_, pending)| pending.code == code && matches!(pending.stage, Stage::Waiting))
-            .map(|(id, _)| id.clone())
+            .map(|(key, _)| key.clone())
     }
 
     /// How many approvals that are not committed `which` picks.
@@ -305,11 +314,17 @@ impl Pairings {
         }
         self.purge(now);
         if cli {
-            let repeat = self.pending.iter().find(|(_, pending)| {
-                pending.cli && pending.name == name && matches!(pending.stage, Stage::Waiting)
-            });
-            if let Some((id, pending)) = repeat {
-                return Ok((id.clone(), pending.code.clone()));
+            let repeat = self
+                .pending
+                .values()
+                .find_map(|pending| match &pending.cli_id {
+                    Some(id) if pending.name == name && matches!(pending.stage, Stage::Waiting) => {
+                        Some((id.clone(), pending.code.clone()))
+                    }
+                    _ => None,
+                });
+            if let Some(repeat) = repeat {
+                return Ok(repeat);
             }
         }
         let held = self
@@ -326,13 +341,13 @@ impl Pairings {
         }
         let request_id = random_hex(REQUEST_ID_HEX_LENGTH / 2);
         self.pending.insert(
-            request_id.clone(),
+            hash_request_id(&request_id),
             Pending {
                 code: code.clone(),
                 name: name.to_string(),
                 profile: profile.map(str::to_string),
-                cli,
-                since: now,
+                cli_id: cli.then(|| request_id.clone()),
+                deadline: now + PENDING_EXPIRY,
                 stage: Stage::Waiting,
             },
         );
@@ -352,17 +367,18 @@ impl Pairings {
         now_unix: u64,
     ) -> Result<PairState, ErrorCode> {
         self.purge(now);
-        let Some(pending) = self.pending.get(request_id) else {
+        let key = hash_request_id(request_id);
+        let Some(pending) = self.pending.get(&key) else {
             return Ok(PairState::Expired);
         };
         let (profile, token_sha256, token) = match &pending.stage {
             Stage::Waiting => return Ok(PairState::Pending),
             Stage::Denied => {
-                self.pending.remove(request_id);
+                self.pending.remove(&key);
                 return Ok(PairState::Denied);
             }
             Stage::Approved { profile, .. } if !profiles.contains(profile) => {
-                self.pending.remove(request_id);
+                self.pending.remove(&key);
                 return Ok(PairState::Expired);
             }
             Stage::Approved {
@@ -389,7 +405,7 @@ impl Pairings {
             },
         );
         self.save(clients, revoked)?;
-        self.pending.remove(request_id);
+        self.pending.remove(&key);
         Ok(PairState::Approved(token))
     }
 
@@ -423,32 +439,29 @@ impl Pairings {
             return Err(ErrorCode::BadRequest);
         }
         self.purge(now);
-        let id = self.waiting_id(code).ok_or(ErrorCode::BadRequest)?;
-        let name = self.pending[&id].name.clone();
+        let key = self.waiting_key(code).ok_or(ErrorCode::BadRequest)?;
+        let name = self.pending[&key].name.clone();
         self.cancel_approvals(|pending| pending.name == name);
         let token = format!("{TOKEN_PREFIX}{}", random_hex(TOKEN_HEX_LENGTH / 2));
-        let pending = self.pending.get_mut(&id).expect("found above");
-        let cli = pending.cli;
+        let pending = self.pending.get_mut(&key).expect("found above");
+        let cli_id = pending.cli_id.clone();
         pending.stage = Stage::Approved {
             profile: profile.to_string(),
             token_sha256: hash_token(&token),
-            token: (!cli).then(|| token.clone()),
+            token: cli_id.is_none().then(|| token.clone()),
         };
-        pending.since = now;
+        pending.deadline = now + PENDING_EXPIRY;
         Ok(Approval {
             replaces: self.clients.contains_key(&name),
             name,
-            cli: cli.then_some(CliToken {
-                request_id: id,
-                token,
-            }),
+            cli: cli_id.map(|request_id| CliToken { request_id, token }),
         })
     }
 
     pub fn deny(&mut self, code: &str, now: Instant) -> Result<(), ErrorCode> {
         self.purge(now);
-        let id = self.waiting_id(code).ok_or(ErrorCode::BadRequest)?;
-        self.pending.get_mut(&id).expect("found above").stage = Stage::Denied;
+        let key = self.waiting_key(code).ok_or(ErrorCode::BadRequest)?;
+        self.pending.get_mut(&key).expect("found above").stage = Stage::Denied;
         Ok(())
     }
 
