@@ -385,7 +385,7 @@ mod tests {
         let running = tokio::spawn(run(Arc::clone(&f.daemon), listener, admin));
 
         let hello = r#"{"type":"hello","protocol":1}"#;
-        let ask = r#"{"type":"ask","token":"TOKEN","state":"s","questions":{"q":{"type":"noul","question":"Is it done?"}}}"#
+        let ask = r#"{"type":"ask","token":"TOKEN","state":"s","questions":{"q":{"type":"noul","instructions":"Is it done?"}}}"#
             .replace("TOKEN", &token);
         let mut first = tokio::io::BufReader::new(dial(&paths).await);
         assert!(exchange(&mut first, hello).await.ok);

@@ -369,7 +369,7 @@ mod tests {
         assert!(f.daemon.idle_since().is_some());
     }
 
-    const ASK: &str = r#"{"type":"ask","token":"TOKEN","state":"s","questions":{"q":{"type":"noul","question":"Is it done?"}}}"#;
+    const ASK: &str = r#"{"type":"ask","token":"TOKEN","state":"s","questions":{"q":{"type":"noul","instructions":"Is it done?"}}}"#;
 
     async fn jev() -> MockServer {
         let server = MockServer::start().await;

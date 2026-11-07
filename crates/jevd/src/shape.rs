@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn questions_follow_the_prototype_rules() {
         assert!(valid_questions(
-            &json!({"q1": {"type": "noul", "text": "Is this a test?"}})
+            &json!({"q1": {"type": "noul", "instructions": "Is this a test?"}})
         ));
         assert!(valid_questions(&json!({"s": {"type": "score"}})));
         assert!(!valid_questions(&json!({})));

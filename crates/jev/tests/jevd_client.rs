@@ -240,7 +240,7 @@ async fn a_call_that_times_out_poisons_the_connection() {
         let ask = Request::Ask {
             token,
             state: json!({"note": "the state"}),
-            questions: json!({"q": {"type": "noul", "question": "Done?"}}),
+            questions: json!({"q": {"type": "noul", "instructions": "Done?"}}),
         };
         connection.set_timeout(Duration::from_secs(1));
         let first = connection.call(&ask).err();

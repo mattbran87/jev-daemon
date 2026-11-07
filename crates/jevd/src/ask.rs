@@ -136,7 +136,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn questions() -> Value {
-        json!({"q": {"type": "noul", "question": "Is it done?"}})
+        json!({"q": {"type": "noul", "instructions": "Is it done?"}})
     }
 
     fn ask(token: &str) -> Request {

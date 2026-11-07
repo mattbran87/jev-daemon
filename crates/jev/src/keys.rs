@@ -100,7 +100,7 @@ fn check_with_jev(env: &Env, profile: &str, key: &str) -> Outcome {
             )
         })?;
     let state = json!("jev key add --check");
-    let questions = json!({ "check": { "type": "noul", "question": "Is this a test request?" } });
+    let questions = json!({ "check": { "type": "noul", "instructions": "Is this a test request?" } });
     runtime
         .block_on(client.ask(&state, &questions, key, false))
         .map(|_| ())

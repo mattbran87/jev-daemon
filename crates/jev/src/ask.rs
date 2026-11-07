@@ -125,7 +125,7 @@ fn from_flags(args: &AskArgs) -> Result<Built, Failure> {
                     "the question id {id:?} appears twice"
                 )));
             }
-            questions.insert(id, json!({ "type": kind, "question": question }));
+            questions.insert(id, json!({ "type": kind, "instructions": question }));
         }
     }
     if questions.is_empty() {
@@ -292,7 +292,7 @@ mod tests {
             &mut env(Some("")),
         )
         .unwrap();
-        let stdin = r#"{"state":"the state","questions":{"q":{"type":"noul","question":"Done?"},"s":{"type":"score","question":"How good?"}}}"#;
+        let stdin = r#"{"state":"the state","questions":{"q":{"type":"noul","instructions":"Done?"},"s":{"type":"score","instructions":"How good?"}}}"#;
         let piped = build(&args(&[]), &mut env(Some(stdin))).unwrap();
         assert_eq!(flags, piped);
         let line = |built: &Built| {
@@ -417,7 +417,7 @@ mod tests {
         env
     }
 
-    const ONE_QUESTION: &str = r#"{"state":"s","questions":{"q":{"type":"noul","question":"x"}}}"#;
+    const ONE_QUESTION: &str = r#"{"state":"s","questions":{"q":{"type":"noul","instructions":"x"}}}"#;
 
     #[test]
     fn a_stdin_over_the_line_cap_is_too_large_before_any_connection() {

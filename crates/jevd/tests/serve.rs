@@ -107,7 +107,7 @@ fn ask(token: &str) -> Request {
     Request::Ask {
         token: token.into(),
         state: json!({"note": "the state"}),
-        questions: json!({"q": {"type": "noul", "question": "Done?"}}),
+        questions: json!({"q": {"type": "noul", "instructions": "Done?"}}),
     }
 }
 

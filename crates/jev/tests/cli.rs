@@ -532,7 +532,7 @@ async fn the_cli_flow_stores_the_token_and_ask_uses_it() {
         .jev(
             &["ask", "--client", "script"],
             ScriptedTerminal::none(),
-            Some(r#"{"state":"s","questions":{"q":{"type":"noul","question":"Done?"}}}"#),
+            Some(r#"{"state":"s","questions":{"q":{"type":"noul","instructions":"Done?"}}}"#),
         )
         .await;
     assert_eq!(piped.code, 0, "{}", piped.out);

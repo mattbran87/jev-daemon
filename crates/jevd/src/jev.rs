@@ -213,20 +213,20 @@ mod tests {
     const KEY: &str = "plainkey123";
 
     fn questions() -> Value {
-        json!({"q": {"type": "noul", "text": "is it?"}})
+        json!({"q": {"type": "noul", "instructions": "is it?"}})
     }
 
     #[test]
     fn the_body_names_the_model_and_redacts_the_key() {
         let body = request_body(
             &json!({"note": "my key is plainkey123"}),
-            &json!({"q": {"type": "noul", "text": "is plainkey123 ok?"}}),
+            &json!({"q": {"type": "noul", "instructions": "is plainkey123 ok?"}}),
             KEY,
             false,
         );
         assert_eq!(body["model"], "jev-latest");
         assert_eq!(body["state"]["note"], "my key is [redacted]");
-        assert_eq!(body["questions"]["q"]["text"], "is [redacted] ok?");
+        assert_eq!(body["questions"]["q"]["instructions"], "is [redacted] ok?");
         assert_eq!(body["questions"]["q"]["type"], "noul");
         assert!(!body.to_string().contains(KEY));
     }
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn strict_redaction_reaches_the_questions() {
         let questions =
-            json!({"q": {"type": "noul", "text": "is it?", "password": "hunter2 has spaces"}});
+            json!({"q": {"type": "noul", "instructions": "is it?", "password": "hunter2 has spaces"}});
         assert_eq!(
             request_body(&json!({}), &questions, KEY, false)["questions"]["q"]["password"],
             "hunter2 has spaces"
