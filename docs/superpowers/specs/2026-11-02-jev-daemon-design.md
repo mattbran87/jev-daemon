@@ -63,6 +63,7 @@ The Python prototype, jev-service, stays private. It serves as the reference for
 | Tokens of CLI clients | OS keyring, service `jev`, account `client:<name>` |
 | Settings and profile names | TOML file in the platform configuration directory. Written by the CLI. Never holds a key. |
 | Pairings | JSON file in the platform configuration directory. Written only by `jevd`. Holds token hashes, never tokens. |
+| Waiting pairing requests | `pending.json` in the platform state directory. Written only by `jevd`. Holds no token and no request ID. See `2026-11-07-pairing-restart-design.md`. |
 | Socket and PID file | Platform runtime directory |
 | Logs | Platform state directory. They record daemon events (start, stop, idle exit, signals, failures), and never hold a key, a token, or request text. One line per daemon event. Control characters, line separators, and bidi characters become spaces. On Unix the log file has mode 0600. |
 
@@ -182,7 +183,7 @@ The keyring write comes before the commit. In the other order, a locked keyring 
 | Code | 8 characters, from an alphabet with no look-alike characters |
 | Request ID | 128-bit random. Only the client that sent `pair` gets it. |
 | Token | 256-bit random, prefix `jevt_`. `jevd` stores only its SHA-256. |
-| Pending expiry | 10 minutes. Pending requests live in memory only. |
+| Pending expiry | 10 minutes. Waiting requests are also saved to `pending.json`, and survive a restart. Approved requests that are not collected live in memory only. |
 | Pending requests at once | 16. Waiting requests and approved requests that are not committed both count. |
 | Full pending list | The next `pair` gets `rate-limited` |
 | Repeat CLI request | A `pair` from `jev` for a name that already has a waiting request from `jev` gets that request's `request_id` and `code`. Its expiry does not restart. A request from a socket client is never shared. |
@@ -337,7 +338,7 @@ All toasts use Claude Code's own `$.ui.toast`, as the prototype does (`register.
 
 | Event | Toast | How often |
 | --- | --- | --- |
-| `pending` | The code, and "Run `jev allow` in a terminal". With no valid code, only "Run `jev allow` in a terminal". | Once per code |
+| `pending` | "In a terminal, run `jev allow` and approve code `<CODE>`": the action first, the code last. With no valid code, only "Run `jev allow` in a terminal". It stays 60 seconds, as every toast does. | Once per code |
 | `no-key`, `bad-key` | "Run `jev key add --profile <p>`", with `<p>` from `error.profile` | Once per profile per process |
 | `jev-unauthorized` | "Jev refused the key for profile `<p>`. Run `jev key add --profile <p>`.", with `<p>` from `error.profile` | Once per profile per process |
 | `jev` not found | Install instructions | Once per process |

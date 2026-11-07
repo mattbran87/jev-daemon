@@ -7,7 +7,7 @@ jev lets local programs ask TypeSafe's Jev model while one background process, `
 - `jev-tray`: a tray icon that shows whether `jevd` runs.
 - `plugins/claude-code`: a Claude Code plugin that gives other plugins `$.jev`.
 
-**Status:** 0.1.0, the first release. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** 0.1.1. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -48,6 +48,16 @@ To build only `jev` and `jevd`, with no GTK, add `--no-default-features`. From a
 ```bash
 cargo install --locked --path crates/jev --no-default-features
 ```
+
+## Pair a client
+
+A program must pair once before it can ask Jev. A Claude Code plugin pairs as the client `cc-<plugin>`.
+
+1. The client asks to pair. The Claude Code plugin shows a toast: "In a terminal, run jev allow and approve code `<CODE>`."
+2. In a terminal, run `jev allow`. It lists each waiting request: its code, and the name of the client.
+3. Type the code from the list. Then pick a profile, and type `y`.
+
+A request waits 10 minutes, also across a restart of `jevd`. When no request waits, `jev allow` says so: ask the client to try again.
 
 ## jev-tray
 

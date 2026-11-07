@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1
+
+- Waiting pairing requests survive a `jevd` restart ([#5](https://github.com/mattbran87/jev-daemon/issues/5)). `jevd` saves them to `pending.json` in the jev state folder. The file holds no token and no request ID. A request still lasts 10 minutes.
+- The pairing toast of the Claude Code plugin leads with `jev allow`, and it ends with the code. It stays 60 seconds, up from 15 ([#6](https://github.com/mattbran87/jev-daemon/issues/6)). Each toast of the plugin now stays 60 seconds.
+- `jev allow` says what to do next when no request waits, and when no waiting request has the code.
+
+Known limits:
+
+- Nobody has checked `jev-tray` by hand on macOS or on a Linux desktop yet. CI builds and tests both systems, but it has no real tray.
+- The macOS binaries are not signed or notarized.
+- **Stop jevd** does not last: a plugin's next request starts `jevd` again.
+- `jev ask --score` has no way to give `criteria`. The plugin's types list `criteria` as needed on a score question. To ask a score question, give the whole request as JSON on stdin or with `--request`.
+
 ## 0.1.0
 
 The first release.
