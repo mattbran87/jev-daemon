@@ -136,8 +136,12 @@ test('a pre-release version parses', () => {
   expect(parseVersion('jev 0.2.0+build5\n')).toEqual([0, 2, 0])
 })
 
+test('the pending toast leads with jev allow, and the code comes last', () => {
+  expect(pendingToast('acme', 'ABCD2345')).toBe('jev: the plugin acme asks to use Jev. In a terminal, run jev allow and approve code ABCD2345.')
+})
+
 test('each toast holds its argument', () => {
-  expect(pendingToast('acme', 'ABCD2345')).toContain('jev allow ABCD2345')
+  expect(pendingToast('acme', 'ABCD2345')).toContain('approve code ABCD2345')
   expect(pendingNoCodeToast('acme')).toContain('jev allow')
   expect(keyToast('work')).toContain('--profile work')
   expect(keyToast(undefined)).toContain('--profile default')

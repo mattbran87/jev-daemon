@@ -33,7 +33,8 @@ export const VERSION_TIMEOUT_MS = 10_000
 export const ASK_TIMEOUT_MS = 150_000
 /** `jev pair`, `jev status`, and `jev clients`. */
 export const OTHER_TIMEOUT_MS = 30_000
-const TOAST_MS = 15_000
+/** The host's toast has only a timeout, so it cannot stay until someone closes it. */
+const TOAST_MS = 60_000
 
 type Found = { ok: true; path: string; version: string }
 type NotFound = { ok: false; code: 'jev-missing' | 'jev-outdated' | 'jev-failed'; message: string; version: string | null }

@@ -25,8 +25,10 @@ const line = (value: unknown, exitCode = 0): Result => ({ exitCode, stdout: `${J
 const engine = (on: On, world: World = {}) => {
   const runs: Run[] = []
   const toasts: string[] = []
+  const toastTimeouts: unknown[] = []
   on('ui.toast', (_$, e) => {
     toasts.push(String((e as unknown as { text?: unknown }).text ?? e))
+    toastTimeouts.push((e as unknown as { timeoutMs?: unknown }).timeoutMs)
     return ok(undefined)
   })
   on('process.run', (_$, e, next) => {
@@ -41,7 +43,7 @@ const engine = (on: On, world: World = {}) => {
     if (args[0] === '--version') return done({ exitCode: 0, stdout: `jev ${world.version ?? '0.1.0'}\n` })
     return done(world.jev?.(args, init?.stdin) ?? line({ ok: true }))
   })
-  return { runs, toasts }
+  return { runs, toasts, toastTimeouts }
 }
 
 /** The runs after `jev --version`, by their command. */
@@ -154,8 +156,8 @@ test('not-paired starts a pairing; the toast shows once per code', { plugins: [A
   expect(pairs.length).toBe(2)
   expect(pairs[0]?.argv).toEqual(['jev', 'pair', '--name', 'cc-acme-review', '--no-prompt', '--json'])
   expect(pairs[0]?.stdin).toBe(undefined)
-  expect(seen.toasts.length).toBe(1)
-  expect(seen.toasts[0]?.includes('jev allow ABCD2345')).toBe(true)
+  expect(seen.toasts).toEqual(['jev: the plugin acme-review asks to use Jev. In a terminal, run jev allow and approve code ABCD2345.'])
+  expect(seen.toastTimeouts).toEqual([60_000])
 })
 
 test('a new pairing code gets its own toast', { plugins: [ACME] }, async ($, on) => {

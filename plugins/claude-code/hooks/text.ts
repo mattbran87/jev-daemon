@@ -110,9 +110,10 @@ export function readReply(stdout: string, exitCode: number): Parsed {
   return failure('jev-failed', `jev printed no result (exit ${exitCode})`)
 }
 
-// Only a `pairCode` that `readReply` checked may go in.
+// Only a `pairCode` that `readReply` checked may go in. The code comes last,
+// so the person can match it to a line of the `jev allow` list.
 export function pendingToast(plugin: string, code: string): string {
-  return `jev: the plugin ${plugin} asks to use Jev. Run jev allow ${code} in a terminal to approve it.`
+  return `jev: the plugin ${plugin} asks to use Jev. In a terminal, run jev allow and approve code ${code}.`
 }
 
 export function pendingNoCodeToast(plugin: string): string {
