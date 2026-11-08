@@ -1,0 +1,32 @@
+# Third-party licenses
+
+`jev`, `jevd`, and `jev-tray` contain code from the crates below. This file gives the license of each crate and its notice text. The license of this project is in [LICENSE](LICENSE).
+
+This file is generated. Do not edit it by hand. To refresh it, see the Licenses section of [README.md](README.md).
+
+## Licenses
+
+{{#each licenses}}
+{{#if first_of_kind}}
+- {{{name}}} (`{{id}}`)
+{{/if}}
+{{/each}}
+{{#each licenses}}
+{{#if first_of_kind}}
+
+## {{{name}}} (`{{id}}`)
+{{/if}}
+
+```text
+{{{text}}}
+```
+
+Used by:
+
+{{! A crate of this workspace has no source. LICENSE covers it, so it is left out. }}
+{{#each used_by}}
+{{#if crate.source}}
+- {{crate.name}} {{crate.version}}
+{{/if}}
+{{/each}}
+{{/each}}

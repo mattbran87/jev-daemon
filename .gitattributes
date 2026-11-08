@@ -1,3 +1,8 @@
 *.png binary
 *.sh  text eol=lf
 *.svg text eol=lf
+# cargo about writes THIRD-PARTY-LICENSES.md from about.hbs. Both are stored
+# and checked out with LF only, on Windows too. A few crates ship a license
+# file with CRLF line ends; git turns those CRs into LF when it stores the file.
+about.hbs               text eol=lf
+THIRD-PARTY-LICENSES.md text eol=lf

@@ -1,0 +1,33 @@
+# cargo-about: writes THIRD-PARTY-LICENSES.md (see the README, Licenses).
+# cargo deny decides which licenses may enter the tree. This file only
+# writes their texts, so `accepted` is the `allow` list of deny.toml.
+
+accepted = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+]
+
+# The release targets, as in deny.toml and dist-workspace.toml.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+]
+
+# No archive holds a crate that only tests or build scripts use.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# option-ext: MPL-2.0, as the exception in deny.toml allows. Crate settings
+# must come last in this file.
+[option-ext]
+accepted = ["MPL-2.0"]
