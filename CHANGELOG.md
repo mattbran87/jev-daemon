@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2
+
+- Each release archive holds `THIRD-PARTY-LICENSES.md`. It gives the license and notice text of each crate that `jev`, `jevd`, and `jev-tray` contain. The archives of 0.1.0 and 0.1.1 hold only this project's `LICENSE`.
+- CI fails when `THIRD-PARTY-LICENSES.md` is out of date.
+- The programs and the Claude Code plugin do not change.
+
+Known limits:
+
+- Nobody has checked `jev-tray` by hand on macOS or on a Linux desktop yet. CI builds and tests both systems, but it has no real tray.
+- The macOS binaries are not signed or notarized.
+- **Stop jevd** does not last: a plugin's next request starts `jevd` again.
+- `jev ask --score` has no way to give `criteria`. The plugin's types list `criteria` as needed on a score question. To ask a score question, give the whole request as JSON on stdin or with `--request`.
+
 ## 0.1.1
 
 - Waiting pairing requests survive a `jevd` restart ([#5](https://github.com/mattbran87/jev-daemon/issues/5)). `jevd` saves them to `pending.json` in the jev state folder. The file holds no token and no request ID. A request still lasts 10 minutes.

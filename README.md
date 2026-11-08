@@ -7,7 +7,7 @@ jev lets local programs ask TypeSafe's Jev model while one background process, `
 - `jev-tray`: a tray icon that shows whether `jevd` runs.
 - `plugins/claude-code`: a Claude Code plugin that gives other plugins `$.jev`.
 
-**Status:** 0.1.1. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** 0.1.2. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 
@@ -100,6 +100,19 @@ The plugin needs `jev` on your `PATH`. Install it first (see above).
 
 The design is in [docs/superpowers/specs/2026-11-02-jev-daemon-design.md](docs/superpowers/specs/2026-11-02-jev-daemon-design.md). The design of `jev-tray` is in [docs/superpowers/specs/2026-11-04-jev-tray-design.md](docs/superpowers/specs/2026-11-04-jev-tray-design.md).
 
-## License
+## Licenses
 
-Apache-2.0. See [LICENSE](LICENSE).
+This project is under Apache-2.0. See [LICENSE](LICENSE).
+
+`jev`, `jevd`, and `jev-tray` contain code from other crates. [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) holds the license and notice text of each one. Each release archive holds this file too.
+
+The file is generated. After a change to the dependencies, refresh it with `cargo-about` 0.9.2:
+
+```bash
+cargo install --locked --version 0.9.2 --features cli cargo-about
+cargo about generate --frozen --workspace -o THIRD-PARTY-LICENSES.md about.hbs
+```
+
+If `cargo about` says that it cannot fetch in offline mode, run `cargo fetch --locked` first. CI fails when the file is out of date.
+
+When you add a dependency, look in its source for a file named `NOTICE` or `NOTICE.*`. Apache-2.0 asks us to pass that text on, and `cargo about` does not collect it. If you find one, add a Notices section to `about.hbs`.
