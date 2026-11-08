@@ -145,3 +145,37 @@ jobs:
         continue-on-error: ${{ matrix.checks == 'advisories' && github.event_name == 'pull_request' }}
         with:
           command: check ${{ matrix.checks }}
+
+  licenses:
+    # THIRD-PARTY-LICENSES.md must be what cargo about writes from Cargo.lock now.
+    name: licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Pinned: a new cargo-about can change the file with no change in this repo.
+      CARGO_ABOUT_VERSION: "0.9.2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+      - name: Install cargo-about
+        # The cargo-about binary needs the cli feature.
+        run: cargo install --locked --version "$CARGO_ABOUT_VERSION" --features cli cargo-about
+      - name: THIRD-PARTY-LICENSES.md is up to date
+        # cargo fetch downloads the crates of every target. --frozen then keeps
+        # cargo about off the network, so the file depends only on Cargo.lock.
+        # A few crates ship a license file with CRLF line ends. Git stores this
+        # file with LF only (.gitattributes), so the comparison ignores a CR.
+        run: |
+          cargo fetch --locked
+          cargo about generate --frozen --workspace -o "$RUNNER_TEMP/THIRD-PARTY-LICENSES.md" about.hbs
+          if ! diff -q --strip-trailing-cr THIRD-PARTY-LICENSES.md "$RUNNER_TEMP/THIRD-PARTY-LICENSES.md" > /dev/null; then
+            diff -u --strip-trailing-cr THIRD-PARTY-LICENSES.md "$RUNNER_TEMP/THIRD-PARTY-LICENSES.md" | head -n 100 || true
+            echo "::error file=THIRD-PARTY-LICENSES.md::THIRD-PARTY-LICENSES.md is out of date. Refresh it with: cargo about generate --frozen --workspace -o THIRD-PARTY-LICENSES.md about.hbs"
+            exit 1
+          fi
