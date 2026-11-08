@@ -29,6 +29,10 @@ default = ["tray"]
 # GTK and gives only jev and jevd.
 tray = ["dep:jev-tray"]
 
+# Each archive holds the notices of the dependencies (see the README, Licenses).
+[package.metadata.dist]
+include = ["../../THIRD-PARTY-LICENSES.md"]
+
 # jev-tray needs GTK 3 to build on Linux, and it loads the AppIndicator
 # library at run time.
 [package.metadata.dist.dependencies.apt]
