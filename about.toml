@@ -1,6 +1,7 @@
 # cargo-about: writes THIRD-PARTY-LICENSES.md (see the README, Licenses).
 # cargo deny decides which licenses may enter the tree. This file only
-# writes their texts, so `accepted` is the `allow` list of deny.toml.
+# writes their texts, so `accepted` is the `allow` list of deny.toml, in the
+# same order: the order picks one side of an `A OR B` license.
 
 accepted = [
     "Apache-2.0",

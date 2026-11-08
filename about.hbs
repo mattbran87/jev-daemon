@@ -23,7 +23,7 @@ This file is generated. Do not edit it by hand. To refresh it, see the Licenses 
 
 Used by:
 
-{{! A crate of this workspace has no source. LICENSE covers it, so it is left out. }}
+{{! A crate with no source is a path dependency. Only the 4 workspace crates are path dependencies, and LICENSE covers them, so they are left out. A new path dependency would be left out too. }}
 {{#each used_by}}
 {{#if crate.source}}
 - {{crate.name}} {{crate.version}}
