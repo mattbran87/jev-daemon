@@ -7,7 +7,7 @@ Each release archive holds `jev`, `jevd`, and `jev-tray`. Those programs contain
 `THIRD-PARTY-LICENSES.md` sits at the repository root.
 
 - It groups the dependencies by license.
-- Each group gives the full license text once, then lists every crate and version under that license.
+- Each group gives each distinct license text once (MIT, BSD, and ISC texts differ by their copyright lines, so a group can hold several), then lists every crate and version under that text.
 - It covers every dependency of every release target: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, and `aarch64-apple-darwin`. A crate that only one target uses still appears. A list longer than one archive needs is allowed. A list that misses a crate is not.
 - It leaves out the workspace's own crates, which `LICENSE` covers, and crates used only for tests or builds, which no archive contains.
 

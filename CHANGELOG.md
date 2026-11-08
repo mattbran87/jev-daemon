@@ -2,7 +2,7 @@
 
 ## 0.1.2
 
-- Each release archive holds `THIRD-PARTY-LICENSES.md`. It gives the license and notice text of each crate that `jev`, `jevd`, and `jev-tray` contain. The archives of 0.1.0 and 0.1.1 hold only this project's `LICENSE`.
+- Each release archive holds `THIRD-PARTY-LICENSES.md`. It gives the license and notice text of each crate that `jev`, `jevd`, and `jev-tray` contain. The archives of 0.1.0 and 0.1.1 hold no license text except this project's `LICENSE`.
 - CI fails when `THIRD-PARTY-LICENSES.md` is out of date.
 - The programs and the Claude Code plugin do not change.
 
