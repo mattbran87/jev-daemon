@@ -49,6 +49,33 @@ To build only `jev` and `jevd`, with no GTK, add `--no-default-features`. From a
 cargo install --locked --path crates/jev --no-default-features
 ```
 
+## Linux keyring
+
+On Linux, `jevd` stores keys only through Secret Service, the desktop keyring on D-Bus. A desktop session usually unlocks its keyring at login, so `jev key add` works at once. A server, WSL, or an SSH-only login can have the keyring service but no unlocked keyring. Then `jev key add` cannot store the key, and `jev status` shows `profiles: none`.
+
+To check, run:
+
+```bash
+busctl --user call org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service ReadAlias s default
+```
+
+If it prints `o "/"`, no default keyring exists. If it fails, no keyring service runs: on Debian and Ubuntu, install `gnome-keyring` and `dbus-user-session`, then log in again.
+
+To create the keyring and unlock it, run these 3 lines. The prompt asks for a new password and does not show what you type:
+
+```bash
+read -rsp "Keyring password: " pw; echo
+printf '%s' "$pw" | gnome-keyring-daemon --replace --unlock --components=secrets
+unset pw
+```
+
+Then run `jev key add`.
+
+- **After each restart, the keyring is locked.** Run the same 3 lines with the same password. Until you do, `jevd` cannot read your keys.
+- **Do not type the password straight into `gnome-keyring-daemon --unlock`.** The Enter key adds a newline, which can become part of the password. The next unlock with the 3 lines then fails.
+- **No password recovery exists.** If you forget it, delete `~/.local/share/keyrings/login.keyring`, which also deletes every key in it. Then run the 3 lines again, and add your keys again.
+- **On a server, keep the session after you log out:** run `sudo loginctl enable-linger "$USER"`. Without linger, systemd deletes `$XDG_RUNTIME_DIR`, which holds the socket of `jevd`, at your last logout.
+
 ## Pair a client
 
 A program must pair once before it can ask Jev. A Claude Code plugin pairs as the client `cc-<plugin>`.
