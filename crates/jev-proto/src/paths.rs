@@ -12,7 +12,9 @@ use std::path::{Path, PathBuf};
 /// only its `run` folder), and `jevd` and every client must see the same folder.
 /// Keys and client tokens go to the OS keyring under the folder's own
 /// service (`Paths::keyring_service`). Those entries outlive the folder: run
-/// `jev key remove` with the same `JEV_HOME` before you delete it.
+/// `jev key remove` with the same `JEV_HOME` before you delete it. On Unix,
+/// the service hashes the folder as spelled, not the folder it resolves to,
+/// so give every program the same spelling (no symlink in its place).
 pub const HOME_VAR: &str = "JEV_HOME";
 
 /// The OS keyring service for keys and client tokens when `JEV_HOME` is not
@@ -409,6 +411,7 @@ mod tests {
         assert_ne!(service("/x"), service("/X"));
         // FNV-1a over the bytes of "/jev-pin".
         assert_eq!(service("/jev-pin"), "jev-9978e02a32614065");
+        assert_eq!(service("/jev-pin/"), "jev-9978e02a32614065");
     }
 
     #[cfg(windows)]

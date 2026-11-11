@@ -18,7 +18,7 @@ The hash is the one that names the Windows pipe today, over a key for the folder
 - **Windows.** The key stays as it is: the UTF-16 units of the absolute folder, with ASCII letters in lower case, `/` as `\`, and no trailing separator. The pipe name does not change.
 - **Unix.** The key is the bytes of the absolute folder path, with no trailing `/`. The key keeps letter case, because Unix paths keep it.
 
-`fnv1a` and the folder key leave their `#[cfg(windows)]` blocks, so every platform uses one hash function. `Paths::under` already makes the folder absolute, so a relative `JEV_HOME` and its absolute form give the same service.
+`fnv1a` leaves its `#[cfg(windows)]` block, so every platform uses one hash function. Each platform has its own `home_hash`, which builds the folder key and hashes it. On Unix, the key is the path as spelled, so a symlink or another spelling of the same folder gives another service. The person must give every program the same spelling. `Paths::under` already makes the folder absolute, so a relative `JEV_HOME` and its absolute form give the same service.
 
 ## 2. The keyring
 
