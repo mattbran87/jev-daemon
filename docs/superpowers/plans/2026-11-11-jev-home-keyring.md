@@ -433,7 +433,7 @@ Expected: no format change, no warnings, every test passes, 1 ignored.
 - [ ] **Step 2: Check the branch**
 
 Run: `git log --oneline main..HEAD` and `git status --short`
-Expected: 5 commits (the spec, then Tasks 1 to 4) and a clean tree. `plugins/claude-code/tsconfig.json` no longer shows, because `.gitignore` ignores it.
+Expected: 7 commits (the spec, the plan, a plan fix, then Tasks 1 to 4) and a clean tree. `plugins/claude-code/tsconfig.json` no longer shows, because `.gitignore` ignores it.
 
 - [ ] **Step 3: A hand check on Windows, only with the person's approval**
 
