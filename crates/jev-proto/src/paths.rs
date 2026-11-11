@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 /// test hook: tests use it, so they never meet a real daemon. The `JEV_HOME`
 /// folder must be private to the user (on Unix, `check_runtime_dir` checks
 /// only its `run` folder), and `jevd` and every client must see the same folder.
+/// Keys and client tokens go to the OS keyring under the folder's own
+/// service (`Paths::keyring_service`). Those entries outlive the folder: run
+/// `jev key remove` with the same `JEV_HOME` before you delete it.
 pub const HOME_VAR: &str = "JEV_HOME";
 
 /// The OS keyring service for keys and client tokens when `JEV_HOME` is not
