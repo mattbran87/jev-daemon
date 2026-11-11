@@ -12,6 +12,10 @@ use std::path::{Path, PathBuf};
 /// only its `run` folder), and `jevd` and every client must see the same folder.
 pub const HOME_VAR: &str = "JEV_HOME";
 
+/// The OS keyring service for keys and client tokens when `JEV_HOME` is not
+/// set. `Paths::keyring_service` gives the service for a `JEV_HOME` folder.
+pub const KEYRING_SERVICE: &str = "jev";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
     /// The settings file and the pairing file.
@@ -56,7 +60,7 @@ impl Paths {
         let socket = PathBuf::from(format!(
             r"\\.\pipe\jev-{}-{:016x}",
             crate::os::user_sid()?,
-            fnv1a(&home_key(home))
+            home_hash(home)
         ));
         Ok(Paths {
             config_dir: home.join("config"),
@@ -86,6 +90,16 @@ impl Paths {
 
     pub fn pid_file(&self) -> PathBuf {
         self.runtime_dir.join("jevd.pid")
+    }
+
+    /// The OS keyring service for keys and client tokens: `jev`, or under
+    /// `JEV_HOME`, `jev-` and the 16-digit hash of the folder. A test folder
+    /// then never reads or writes the real entries.
+    pub fn keyring_service(&self) -> String {
+        match &self.home {
+            None => KEYRING_SERVICE.to_string(),
+            Some(home) => format!("jev-{:016x}", home_hash(home)),
+        }
     }
 
     /// Creates the runtime folder when it is missing, then checks it as
@@ -231,17 +245,31 @@ fn home_key(home: &Path) -> Vec<u16> {
     units
 }
 
-/// FNV-1a, 64 bits, over the two bytes of each UTF-16 unit, low byte first:
-/// a short, stable name for a `JEV_HOME` folder. Not a security measure; the
-/// pipe's access list is.
+/// A short, stable name for a `JEV_HOME` folder: FNV-1a, 64 bits, over the
+/// folder key. Windows hashes the two bytes of each UTF-16 unit of
+/// `home_key`, low byte first. Not a security measure; the pipe's access
+/// list and the keyring's own access rules are.
 #[cfg(windows)]
-fn fnv1a(units: &[u16]) -> u64 {
-    units
-        .iter()
-        .flat_map(|unit| unit.to_le_bytes())
-        .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
-        })
+fn home_hash(home: &Path) -> u64 {
+    fnv1a(home_key(home).iter().flat_map(|unit| unit.to_le_bytes()))
+}
+
+/// Unix hashes the bytes of the folder path, without trailing `/`. Unix
+/// paths keep letter case, so the hash keeps it too.
+#[cfg(unix)]
+fn home_hash(home: &Path) -> u64 {
+    use std::os::unix::ffi::OsStrExt;
+    let mut bytes = home.as_os_str().as_bytes();
+    while bytes.len() > 1 && bytes.ends_with(b"/") {
+        bytes = &bytes[..bytes.len() - 1];
+    }
+    fnv1a(bytes.iter().copied())
+}
+
+fn fnv1a(bytes: impl IntoIterator<Item = u8>) -> u64 {
+    bytes.into_iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
 
 #[cfg(test)]
@@ -326,6 +354,58 @@ mod tests {
         let a = Paths::under(Path::new("/a")).unwrap();
         let b = Paths::under(Path::new("/b")).unwrap();
         assert_ne!(a.socket, b.socket);
+    }
+
+    #[test]
+    fn no_home_uses_the_default_keyring_service() {
+        let paths = Paths::from_vars(vars(&[
+            ("HOME", "/home/u"),
+            ("APPDATA", r"C:\r"),
+            ("LOCALAPPDATA", r"C:\l"),
+        ]))
+        .unwrap();
+        assert_eq!(paths.keyring_service(), "jev");
+        assert_eq!(KEYRING_SERVICE, "jev");
+    }
+
+    #[test]
+    fn a_home_gets_its_own_keyring_service() {
+        let service = Paths::under(Path::new("/a")).unwrap().keyring_service();
+        let digits = service.strip_prefix("jev-").expect("starts with jev-");
+        assert_eq!(digits.len(), 16, "{service}");
+        assert!(
+            digits
+                .chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+            "{service}"
+        );
+    }
+
+    #[test]
+    fn two_homes_get_two_keyring_services() {
+        let a = Paths::under(Path::new("/a")).unwrap();
+        let b = Paths::under(Path::new("/b")).unwrap();
+        assert_ne!(a.keyring_service(), b.keyring_service());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_keyring_service_ignores_case_and_trailing_slashes() {
+        let service = |home: &str| Paths::under(Path::new(home)).unwrap().keyring_service();
+        assert_eq!(service(r"C:\x"), service(r"c:\X"));
+        assert_eq!(service(r"C:\x"), service(r"C:\x\"));
+        assert_eq!(service(r"C:\x"), service("C:/x/"));
+        assert_eq!(service(r"C:\jev-pin"), "jev-2b614bce24bfacb3");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_keyring_service_ignores_a_trailing_slash() {
+        let service = |home: &str| Paths::under(Path::new(home)).unwrap().keyring_service();
+        assert_eq!(service("/x"), service("/x/"));
+        assert_ne!(service("/x"), service("/X"));
+        // FNV-1a over the bytes of "/jev-pin".
+        assert_eq!(service("/jev-pin"), "jev-9978e02a32614065");
     }
 
     #[cfg(windows)]
