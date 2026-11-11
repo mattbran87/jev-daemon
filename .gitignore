@@ -1,6 +1,8 @@
 /target
 /.claude/worktrees/
 /.claude/settings.local.json
-# Claude Code writes this folder when it loads the mod.
+/.claude/handoff*.md
+# Claude Code writes this folder and this file when it loads the mod.
 /plugins/claude-code/.claude-plugin/types/
+/plugins/claude-code/tsconfig.json
 node_modules/
