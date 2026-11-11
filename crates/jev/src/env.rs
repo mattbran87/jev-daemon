@@ -154,10 +154,11 @@ impl Env {
         let me = std::env::current_exe()
             .map_err(|error| format!("cannot find this program: {error}"))?;
         let folder = me.parent().map(PathBuf::from).unwrap_or_default();
+        let service = paths.keyring_service();
         Ok(Env {
             paths,
             jevd: folder.join(format!("jevd{}", std::env::consts::EXE_SUFFIX)),
-            store: Arc::new(OsKeyring),
+            store: Arc::new(OsKeyring::new(service)),
             terminal: Box::new(DeviceTerminal),
             stdin: Box::new(StdInput),
             out: Box::new(io::stdout()),

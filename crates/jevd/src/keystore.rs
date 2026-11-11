@@ -16,7 +16,9 @@ use std::sync::Mutex;
 
 use zeroize::Zeroizing;
 
-pub const SERVICE: &str = "jev";
+/// The service when `JEV_HOME` is not set. `Paths::keyring_service` picks
+/// the service that `jev` and `jevd` use.
+pub const SERVICE: &str = jev_proto::paths::KEYRING_SERVICE;
 
 /// The account that holds a profile's TypeSafe key.
 pub fn profile_account(profile: &str) -> String {
@@ -68,12 +70,23 @@ pub trait KeyStore: Send + Sync {
 }
 
 /// The real keyring: Windows Credential Manager, the macOS Keychain, or the
-/// Secret Service on Linux. A call can block on a keyring prompt, so async
-/// code runs it on a blocking thread.
-pub struct OsKeyring;
+/// Secret Service on Linux, under one service name. A call can block on a
+/// keyring prompt, so async code runs it on a blocking thread.
+pub struct OsKeyring {
+    service: String,
+}
 
-fn entry(account: &str) -> Result<keyring::Entry, StoreError> {
-    keyring::Entry::new(SERVICE, account).map_err(|error| store_error(&error))
+impl OsKeyring {
+    /// The keyring entries under `service`. Give it `Paths::keyring_service`.
+    pub fn new(service: impl Into<String>) -> OsKeyring {
+        OsKeyring {
+            service: service.into(),
+        }
+    }
+
+    fn entry(&self, account: &str) -> Result<keyring::Entry, StoreError> {
+        keyring::Entry::new(&self.service, account).map_err(|error| store_error(&error))
+    }
 }
 
 /// The kind of each failure. The keyring's own text is never passed on,
@@ -92,7 +105,7 @@ fn store_error(error: &keyring::Error) -> StoreError {
 
 impl KeyStore for OsKeyring {
     fn get(&self, account: &str) -> Result<Option<Zeroizing<String>>, StoreError> {
-        match entry(account)?.get_password() {
+        match self.entry(account)?.get_password() {
             Ok(secret) => Ok(Some(Zeroizing::new(secret))),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(error) => Err(store_error(&error)),
@@ -100,13 +113,13 @@ impl KeyStore for OsKeyring {
     }
 
     fn set(&self, account: &str, secret: &str) -> Result<(), StoreError> {
-        entry(account)?
+        self.entry(account)?
             .set_password(secret)
             .map_err(|error| store_error(&error))
     }
 
     fn delete(&self, account: &str) -> Result<bool, StoreError> {
-        match entry(account)?.delete_credential() {
+        match self.entry(account)?.delete_credential() {
             Ok(()) => Ok(true),
             Err(keyring::Error::NoEntry) => Ok(false),
             Err(error) => Err(store_error(&error)),
@@ -300,7 +313,8 @@ mod tests {
     #[ignore = "touches the real OS keyring; run by hand with --ignored"]
     fn the_os_keyring_round_trips() {
         let account = format!("test:{}", std::process::id());
-        let store = OsKeyring;
+        // A test service, so a hand run never touches the entries under `jev`.
+        let store = OsKeyring::new("jev-test");
         store.set(&account, "secret-value").unwrap();
         assert_eq!(
             store.get(&account).unwrap().expect("stored").as_str(),

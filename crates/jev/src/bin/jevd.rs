@@ -58,7 +58,7 @@ async fn serve(paths: Paths) -> ExitCode {
         settings_file: paths.settings_file(),
         pairing_file: paths.pairing_file(),
         pending_file: paths.pending_file(),
-        store: Arc::new(OsKeyring),
+        store: Arc::new(OsKeyring::new(paths.keyring_service())),
         jev,
     };
     let daemon = match Daemon::new(config) {
