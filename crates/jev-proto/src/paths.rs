@@ -353,6 +353,17 @@ mod tests {
         assert_ne!(pipe(r"C:\x"), pipe(r"C:\y"));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn the_pipe_name_of_a_known_home_does_not_change() {
+        let paths = Paths::under(Path::new(r"C:\jev-pin")).unwrap();
+        let expected = format!(
+            r"\\.\pipe\jev-{}-2b614bce24bfacb3",
+            crate::os::user_sid().unwrap()
+        );
+        assert_eq!(paths.socket, PathBuf::from(expected));
+    }
+
     #[cfg(all(unix, not(target_os = "macos")))]
     #[test]
     fn linux_ignores_relative_xdg_folders() {
