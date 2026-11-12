@@ -57,7 +57,7 @@ pub enum Command {
     /// Send one request to Jev. Prints JSON.
     ///
     /// The request comes from JSON on stdin, from --request, or from --state
-    /// with --noul or --score. With question flags or --request, stdin must
+    /// with --noul, --score, or --choice. With question flags or --request, stdin must
     /// be a terminal or closed; jev reads it to the end.
     Ask(AskArgs),
 }
@@ -118,9 +118,22 @@ pub struct AskArgs {
     /// A noul question, <id>=<question>. Repeatable.
     #[arg(long)]
     pub noul: Vec<String>,
-    /// A score question, <id>=<question>. Repeatable.
+    /// A score question, <id>=<question>. Repeatable. Give its levels with
+    /// --level.
     #[arg(long)]
     pub score: Vec<String>,
+    /// A choice question, <id>=<question>. Repeatable. Give its options with
+    /// --option.
+    #[arg(long)]
+    pub choice: Vec<String>,
+    /// One option of choice question <id>, <id>=<name>. Repeatable, 1 to 255
+    /// per question.
+    #[arg(long)]
+    pub option: Vec<String>,
+    /// One level of score question <id>, <id>=<text>, from the lowest to the
+    /// highest. Repeatable, 1 to 10 per question.
+    #[arg(long)]
+    pub level: Vec<String>,
     /// The whole request as JSON, for callers whose stdin is closed.
     #[arg(long)]
     pub request: Option<String>,

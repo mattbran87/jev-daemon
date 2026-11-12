@@ -6,7 +6,7 @@ use std::io::Write;
 
 use jev_proto::{valid_name, ErrorCode, Request, MAX_LINE};
 use jevd::keystore::client_account;
-use jevd::shape::valid_question_id;
+use jevd::shape::{valid_question_id, MAX_CHOICES};
 use serde_json::{json, Map, Value};
 use zeroize::Zeroizing;
 
@@ -14,6 +14,9 @@ use crate::cli::AskArgs;
 use crate::env::{read_capped, Env};
 use crate::link::{open, reply_result};
 use crate::out::{clean, escape_json, failure_json, keyring_failure, Failure};
+
+/// The most levels one score question can have (TypeSafe's limit).
+const MAX_LEVELS: usize = 10;
 
 /// The state and the questions of one request.
 #[derive(Debug, PartialEq)]
@@ -26,7 +29,7 @@ pub struct Built {
 fn split(flag: &str, text: &str) -> Result<(String, String), Failure> {
     let (id, question) = text
         .split_once('=')
-        .ok_or_else(|| Failure::usage(format!("--{flag} takes <id>=<question>, not {text:?}")))?;
+        .ok_or_else(|| Failure::usage(format!("--{flag} takes <id>=<text>, not {text:?}")))?;
     if !valid_question_id(id) {
         return Err(Failure::usage(format!(
             "the question id {id:?} must be 1 to 64 letters, digits, '_', or '-'"
@@ -52,10 +55,19 @@ fn read_stdin(env: &mut Env) -> Result<Option<String>, Failure> {
 
 /// Builds the request from exactly one source.
 pub fn build(args: &AskArgs, env: &mut Env) -> Result<Built, Failure> {
-    let flags = args.state.is_some() || !args.noul.is_empty() || !args.score.is_empty();
+    let flags = args.state.is_some()
+        || [
+            &args.noul,
+            &args.score,
+            &args.choice,
+            &args.option,
+            &args.level,
+        ]
+        .iter()
+        .any(|list| !list.is_empty());
     if flags && args.request.is_some() {
         return Err(Failure::usage(
-            "--request cannot go with --state, --noul, or --score",
+            "--request cannot go with --state or a question flag",
         ));
     }
     if flags || args.request.is_some() {
@@ -84,7 +96,7 @@ pub fn build(args: &AskArgs, env: &mut Env) -> Result<Built, Failure> {
     }
     if env.stdin.is_terminal() {
         return Err(Failure::usage(
-            "give the request as JSON on stdin, with --request, or with --state and --noul or --score",
+            "give the request as JSON on stdin, with --request, or with --state and --noul, --score, or --choice",
         ));
     }
     let text = read_stdin(env)?.ok_or_else(|| too_large("stdin"))?;
@@ -104,9 +116,23 @@ fn from_json(text: &str) -> Result<Built, Failure> {
     })
 }
 
+/// The `criteria` of question `id`, which must have type `kind`.
+fn criteria_of<'a>(
+    questions: &'a mut Map<String, Value>,
+    id: &str,
+    kind: &str,
+    flag: &str,
+) -> Result<&'a mut Value, Failure> {
+    questions
+        .get_mut(id)
+        .filter(|question| question["type"] == kind)
+        .map(|question| &mut question["criteria"])
+        .ok_or_else(|| Failure::usage(format!("--{flag} {id:?} names no --{kind} question")))
+}
+
 fn from_flags(args: &AskArgs) -> Result<Built, Failure> {
     let state = match args.state.as_deref() {
-        None => return Err(Failure::usage("--state is needed with --noul or --score")),
+        None => return Err(Failure::usage("--state is needed with a question flag")),
         Some(text) => match text.strip_prefix('@') {
             Some(path) => std::fs::File::open(path)
                 .and_then(|file| read_capped(file, MAX_LINE))
@@ -116,7 +142,11 @@ fn from_flags(args: &AskArgs) -> Result<Built, Failure> {
         },
     };
     let mut questions = Map::new();
-    let flags = [("noul", &args.noul), ("score", &args.score)];
+    let flags = [
+        ("noul", &args.noul),
+        ("score", &args.score),
+        ("choice", &args.choice),
+    ];
     for (kind, list) in flags {
         for entry in list {
             let (id, question) = split(kind, entry)?;
@@ -125,13 +155,60 @@ fn from_flags(args: &AskArgs) -> Result<Built, Failure> {
                     "the question id {id:?} appears twice"
                 )));
             }
-            questions.insert(id, json!({ "type": kind, "instructions": question }));
+            let mut object = json!({ "type": kind, "instructions": question });
+            match kind {
+                "score" => object["criteria"] = json!([]),
+                "choice" => object["criteria"] = json!({}),
+                _ => {}
+            }
+            questions.insert(id, object);
         }
     }
     if questions.is_empty() {
         return Err(Failure::usage(
-            "give at least one --noul or --score question",
+            "give at least one --noul, --score, or --choice question",
         ));
+    }
+    for entry in &args.level {
+        let (id, text) = split("level", entry)?;
+        let levels = criteria_of(&mut questions, &id, "score", "level")?
+            .as_array_mut()
+            .expect("a score question from flags holds an array");
+        if levels.len() == MAX_LEVELS {
+            return Err(Failure::usage(format!(
+                "the score question {id:?} has more than {MAX_LEVELS} levels"
+            )));
+        }
+        levels.push(Value::String(text));
+    }
+    for entry in &args.option {
+        let (id, name) = split("option", entry)?;
+        let options = criteria_of(&mut questions, &id, "choice", "option")?
+            .as_object_mut()
+            .expect("a choice question from flags holds an object");
+        if options.contains_key(&name) {
+            return Err(Failure::usage(format!(
+                "the option {name:?} appears twice on {id:?}"
+            )));
+        }
+        if options.len() == MAX_CHOICES {
+            return Err(Failure::usage(format!(
+                "the choice question {id:?} has more than {MAX_CHOICES} options"
+            )));
+        }
+        options.insert(name, Value::Null);
+    }
+    for (id, question) in &questions {
+        let missing = match &question["criteria"] {
+            Value::Array(levels) if levels.is_empty() => Some("--level"),
+            Value::Object(options) if options.is_empty() => Some("--option"),
+            _ => None,
+        };
+        if let Some(flag) = missing {
+            return Err(Failure::usage(format!(
+                "the question {id:?} needs at least one {flag}"
+            )));
+        }
     }
     Ok(Built {
         state: Value::String(state),
@@ -278,6 +355,11 @@ mod tests {
         }
     }
 
+    fn owned_args(line: &[String]) -> AskArgs {
+        let refs: Vec<&str> = line.iter().map(String::as_str).collect();
+        args(&refs)
+    }
+
     #[test]
     fn flags_and_stdin_json_give_the_same_request() {
         let flags = build(
@@ -288,11 +370,15 @@ mod tests {
                 "q=Done?",
                 "--score",
                 "s=How good?",
+                "--level",
+                "s=Bad",
+                "--level",
+                "s=Good",
             ]),
             &mut env(Some("")),
         )
         .unwrap();
-        let stdin = r#"{"state":"the state","questions":{"q":{"type":"noul","instructions":"Done?"},"s":{"type":"score","instructions":"How good?"}}}"#;
+        let stdin = r#"{"state":"the state","questions":{"q":{"type":"noul","instructions":"Done?"},"s":{"type":"score","instructions":"How good?","criteria":["Bad","Good"]}}}"#;
         let piped = build(&args(&[]), &mut env(Some(stdin))).unwrap();
         assert_eq!(flags, piped);
         let line = |built: &Built| {
@@ -345,6 +431,81 @@ mod tests {
             &["--state", "s", "--request", "{}"],
             &["--request", "not json"],
             &["--request", r#"{"state":"s"}"#],
+        ] {
+            let failure = build(&args(line), &mut env(Some(""))).unwrap_err();
+            assert_eq!(failure.exit_code(), 2, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn choice_and_level_flags_build_criteria() {
+        let flags = build(
+            &args(&[
+                "--state",
+                "s",
+                "--option",
+                "mood=angry",
+                "--choice",
+                "mood=What mood?",
+                "--option",
+                "mood=calm",
+                "--score",
+                "u=How urgent?",
+                "--level",
+                "u=Can wait",
+                "--level",
+                "u=Now",
+            ]),
+            &mut env(Some("")),
+        )
+        .unwrap();
+        let stdin = r#"{"state":"s","questions":{"mood":{"type":"choice","instructions":"What mood?","criteria":{"angry":null,"calm":null}},"u":{"type":"score","instructions":"How urgent?","criteria":["Can wait","Now"]}}}"#;
+        assert_eq!(flags, build(&args(&[]), &mut env(Some(stdin))).unwrap());
+    }
+
+    #[test]
+    fn choice_and_level_flags_hold_their_limits() {
+        let mut line: Vec<String> = ["--state", "s", "--choice", "c=x", "--score", "u=x"]
+            .map(String::from)
+            .to_vec();
+        for i in 0..255 {
+            line.extend(["--option".to_string(), format!("c=o{i}")]);
+        }
+        for i in 0..10 {
+            line.extend(["--level".to_string(), format!("u=l{i}")]);
+        }
+        build(&owned_args(&line), &mut env(Some(""))).unwrap();
+        let mut too_many_options = line.clone();
+        too_many_options.extend(["--option".to_string(), "c=o255".to_string()]);
+        let mut too_many_levels = line;
+        too_many_levels.extend(["--level".to_string(), "u=l10".to_string()]);
+        for line in [too_many_options, too_many_levels] {
+            let failure = build(&owned_args(&line), &mut env(Some(""))).unwrap_err();
+            assert_eq!(failure.exit_code(), 2);
+        }
+    }
+
+    #[test]
+    fn bad_choice_and_level_flags_are_usage_errors() {
+        for line in [
+            &["--state", "s", "--choice", "c=x"][..],
+            &["--state", "s", "--score", "u=x"],
+            &["--state", "s", "--noul", "q=x", "--option", "q=a"],
+            &["--state", "s", "--noul", "q=x", "--level", "q=a"],
+            &[
+                "--state", "s", "--choice", "c=x", "--option", "c=a", "--level", "c=low",
+            ],
+            &[
+                "--state", "s", "--choice", "c=x", "--option", "c=a", "--option", "c=a",
+            ],
+            &["--state", "s", "--choice", "c=x", "--option", "no-equals"],
+            &["--state", "s", "--choice", "c=x", "--option", "other=a"],
+            &[
+                "--state", "s", "--choice", "c=x", "--noul", "c=y", "--option", "c=a",
+            ],
+            &["--option", "c=a"],
+            &["--request", ONE_QUESTION, "--option", "c=a"],
+            &["--request", ONE_QUESTION, "--level", "c=a"],
         ] {
             let failure = build(&args(line), &mut env(Some(""))).unwrap_err();
             assert_eq!(failure.exit_code(), 2, "{line:?}");
@@ -493,10 +654,12 @@ mod tests {
                 build(&args(&["--state", "s", "--noul", flag]), &mut env(Some(""))).unwrap_err();
             assert_eq!(failure.exit_code(), 2, "{flag:?}");
         }
-        let good = format!("{}=x", "a".repeat(64));
-        for flag in ["Q_1-b=x", &good] {
+        let long_id = "a".repeat(64);
+        for id in ["Q_1-b", long_id.as_str()] {
+            let question = format!("{id}=x");
+            let level = format!("{id}=low");
             build(
-                &args(&["--state", "s", "--score", flag]),
+                &args(&["--state", "s", "--score", &question, "--level", &level]),
                 &mut env(Some("")),
             )
             .unwrap();
