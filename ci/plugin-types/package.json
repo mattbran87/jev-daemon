@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "A type check of the jev-daemon plugin's public types. CI runs it; nothing here ships.",
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}
