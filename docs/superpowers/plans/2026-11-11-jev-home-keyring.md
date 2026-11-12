@@ -445,11 +445,11 @@ Preview the entries before the check:
 cmdkey /list | Select-String 'jev'
 ```
 
-Read that output, and note every entry that exists now. Then run:
+Read that output, and note every entry that exists now. Then run the commands below. The key goes through `cmd` because a PowerShell pipe adds `\r\n` to the text, and `jev key add` refuses a key with that line end.
 
 ```powershell
 $env:JEV_HOME = "$env:TEMP\jev-hand-check"
-'tsk-not-a-real-key' | .\target\debug\jev.exe key add --stdin --profile handcheck
+cmd /c "<nul set /p =tsk-not-a-real-key| .\target\debug\jev.exe key add --stdin --profile handcheck"
 cmdkey /list | Select-String 'jev'
 .\target\debug\jev.exe key remove --profile handcheck --force
 .\target\debug\jev.exe stop
