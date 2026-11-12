@@ -172,6 +172,9 @@ fn from_flags(args: &AskArgs) -> Result<Built, Failure> {
     }
     for entry in &args.level {
         let (id, text) = split("level", entry)?;
+        if text.is_empty() {
+            return Err(Failure::usage(format!("--level {id:?} has no text")));
+        }
         let levels = criteria_of(&mut questions, &id, "score", "level")?
             .as_array_mut()
             .expect("a score question from flags holds an array");
@@ -184,6 +187,9 @@ fn from_flags(args: &AskArgs) -> Result<Built, Failure> {
     }
     for entry in &args.option {
         let (id, name) = split("option", entry)?;
+        if name.is_empty() {
+            return Err(Failure::usage(format!("--option {id:?} has no name")));
+        }
         let options = criteria_of(&mut questions, &id, "choice", "option")?
             .as_object_mut()
             .expect("a choice question from flags holds an object");
@@ -503,6 +509,8 @@ mod tests {
             ],
             &["--state", "s", "--choice", "c=x", "--option", "no-equals"],
             &["--state", "s", "--choice", "c=x", "--option", "other=a"],
+            &["--state", "s", "--choice", "c=x", "--option", "c="],
+            &["--state", "s", "--score", "u=x", "--level", "u="],
             &[
                 "--state", "s", "--choice", "c=x", "--noul", "c=y", "--option", "c=a",
             ],
