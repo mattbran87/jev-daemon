@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.4
 
 - The design spec and the plugin's `JevErrorCode` comment say, for each error code of a failed ask, whether Jev got the request: no, yes, or maybe. The programs do not change.
 - jevd accepts `choice` questions. A choice question needs `criteria` with 1 to 255 options, and the answer's `choice` must be one of them. An older `jevd` refuses a choice question with `bad-request`; run `jev stop`, and the next request starts the new `jevd`.
