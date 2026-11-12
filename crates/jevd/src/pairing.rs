@@ -373,8 +373,10 @@ impl Pairings {
             let left = (saved.deadline - now_unix).min(PENDING_EXPIRY.as_secs());
             kept.push((left, saved));
         }
-        // The latest deadlines stay, and the earliest go first.
-        kept.sort_by_key(|(left, _)| std::cmp::Reverse(*left));
+        // The latest deadlines stay, and the earliest go first. Sort by the
+        // saved deadline, not by the time left: after the cap, many entries
+        // can have the same time left, and the newest of them must stay.
+        kept.sort_by_key(|(_, saved)| std::cmp::Reverse(saved.deadline));
         kept.truncate(MAX_PENDING);
         for (left, saved) in kept {
             // jevd does not know the ID of a request from `jev` any more, and
@@ -1870,6 +1872,30 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, ["cli", "good"]);
+    }
+
+    #[test]
+    fn after_the_cap_a_load_keeps_the_latest_saved_deadlines() {
+        let dir = tempfile::tempdir().unwrap();
+        let code = |i: usize| (CODE_ALPHABET[i] as char).to_string().repeat(CODE_LENGTH);
+        // Every deadline is past the 10-minute cap, so every entry gets 600
+        // seconds. The earliest deadline comes first in the file, and its
+        // code, 22222222, sorts first.
+        let requests = (0..MAX_PENDING + 1)
+            .map(|i| saved(&code(i), &format!("app{i}"), T + 700 + i as u64))
+            .collect();
+        write_pending(&dir, requests);
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let mut names: Vec<String> = pairings
+            .pending_list(now)
+            .into_iter()
+            .map(|view| view.name)
+            .collect();
+        names.sort();
+        let mut expected: Vec<String> = (1..MAX_PENDING + 1).map(|i| format!("app{i}")).collect();
+        expected.sort();
+        assert_eq!(names, expected);
     }
 
     #[test]
