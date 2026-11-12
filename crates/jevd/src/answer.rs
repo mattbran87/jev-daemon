@@ -27,6 +27,14 @@ pub fn valid_answers(answers: &Value, questions: &Value) -> bool {
             Some("score") => {
                 finite(answer.get("score")).is_some() && finite(answer.get("confidence")).is_some()
             }
+            Some("choice") => {
+                let options = question.get("criteria").and_then(Value::as_object);
+                let named = answer
+                    .get("choice")
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| options.is_some_and(|options| options.contains_key(name)));
+                named && finite(answer.get("confidence")).is_some_and(|n| (0.0..=1.0).contains(&n))
+            }
             _ => true,
         }
     })
@@ -109,5 +117,38 @@ mod tests {
         let noul = json!({"q1": {"type": "noul"}});
         let answers = json!({"q1": {"type": "noul", "noul": 0.2, "why": "x"}, "q9": {}});
         assert!(valid_answers(&answers, &noul));
+    }
+
+    #[test]
+    fn a_choice_answer_names_one_of_the_criteria() {
+        let choice =
+            json!({"m": {"type": "choice", "criteria": {"angry": null, "calm": "Polite"}}});
+        let good = json!({"m": {"type": "choice", "choice": "calm", "confidence": 0.7,
+            "probabilities": {"angry": 0.3, "calm": 0.7}}});
+        assert!(valid_answers(&good, &choice));
+        // The edges of confidence pass; probabilities are not checked.
+        assert!(valid_answers(
+            &json!({"m": {"type": "choice", "choice": "angry", "confidence": 0}}),
+            &choice
+        ));
+        assert!(valid_answers(
+            &json!({"m": {"type": "choice", "choice": "angry", "confidence": 1}}),
+            &choice
+        ));
+        for bad in [
+            json!({"type": "choice", "choice": "excited", "confidence": 0.7}),
+            json!({"type": "choice", "choice": 1, "confidence": 0.7}),
+            json!({"type": "choice", "confidence": 0.7}),
+            json!({"type": "choice", "choice": "calm"}),
+            json!({"type": "choice", "choice": "calm", "confidence": 1.5}),
+            json!({"type": "choice", "choice": "calm", "confidence": "0.7"}),
+        ] {
+            assert!(!valid_answers(&json!({"m": bad}), &choice), "{bad}");
+        }
+        // A question with no criteria has no valid choice.
+        assert!(!valid_answers(
+            &json!({"m": {"type": "choice", "choice": "calm", "confidence": 0.7}}),
+            &json!({"m": {"type": "choice"}})
+        ));
     }
 }
