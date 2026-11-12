@@ -137,7 +137,8 @@ pub struct AskArgs {
     /// The whole request as JSON, for callers whose stdin is closed.
     #[arg(long)]
     pub request: Option<String>,
-    /// Print only this answer's number.
+    /// Print only this answer's value: a number for noul and score, the
+    /// option name for choice.
     #[arg(long)]
     pub value: Option<String>,
 }

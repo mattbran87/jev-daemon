@@ -1,6 +1,7 @@
 //! `jev ask` (spec section 6). The request comes from one place: flags,
 //! `--request`, or JSON on stdin. The output is always JSON on stdout,
-//! except with `--value`, which prints only that answer's number.
+//! except with `--value`, which prints only that answer's value: the number
+//! of a `noul` or `score` answer, or the option name of a `choice` answer.
 
 use std::io::Write;
 
@@ -304,15 +305,17 @@ fn print_reply(env: &mut Env, args: &AskArgs, reply: jev_proto::Reply) -> i32 {
         let _ = writeln!(env.out, "{}", escape_json(&line));
         return 0;
     };
-    // The answer's own type names the field that holds its number.
+    // The answer's own type names the field that holds its value.
     let answer = data.get("answers").and_then(|answers| answers.get(id));
-    let number = answer.and_then(|answer| match answer.get("type")?.as_str()? {
-        kind @ ("noul" | "score") => answer.get(kind)?.as_f64(),
+    let value = answer.and_then(|answer| match answer.get("type")?.as_str()? {
+        kind @ ("noul" | "score") => answer.get(kind)?.as_f64().map(|number| number.to_string()),
+        // jevd checks that the name is one of the request's own options.
+        "choice" => answer.get("choice")?.as_str().map(clean),
         _ => None,
     });
-    match number {
-        Some(number) => {
-            let _ = writeln!(env.out, "{number}");
+    match value {
+        Some(value) => {
+            let _ = writeln!(env.out, "{value}");
             0
         }
         None => {
@@ -723,12 +726,28 @@ mod tests {
     }
 
     #[test]
+    fn value_prints_the_name_of_a_choice() {
+        let reply = jev_proto::Reply::success(json!({"answers": {"mood": {
+            "type": "choice",
+            "choice": "calm",
+            "confidence": 0.7,
+            "probabilities": {"angry": 0.3, "calm": 0.7},
+        }}}));
+        assert_eq!(
+            printed(&["--value", "mood"], reply),
+            (0, "calm\n".to_string(), String::new())
+        );
+    }
+
+    #[test]
     fn value_with_a_wrong_answer_is_bad_answer() {
         for answer in [
             json!({"type": "noul", "score": 0.5}),
             json!({"type": "score", "noul": 0.5}),
             json!({"type": "noul", "noul": "0.5"}),
             json!({"noul": 0.5}),
+            json!({"type": "choice", "choice": 1}),
+            json!({"type": "choice"}),
             json!(null),
         ] {
             let reply = jev_proto::Reply::success(json!({"answers": {"q": answer}}));
