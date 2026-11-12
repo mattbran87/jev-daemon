@@ -8,6 +8,7 @@
 - `jev ask --value` prints the option name of a choice answer, not a number.
 - `jev ask --score` with no `--level` now exits 2 and calls nothing. Before, it reached Jev, and Jev refused it because the API needs `criteria`.
 - The plugin's types describe `choice` questions and answers.
+- CI checks the plugin's public types (`types/index.d.ts`) with TypeScript. The check needs no Claude Code session, so it does not cover `hooks/*.ts`. The programs and the plugin do not change.
 
 ## 0.1.3
 
