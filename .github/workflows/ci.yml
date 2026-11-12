@@ -127,6 +127,24 @@ jobs:
       - name: The mod's tests
         run: claude plugin test plugins/claude-code
 
+  plugin-types:
+    name: plugin types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        with:
+          node-version: "22"
+      - name: Install TypeScript
+        working-directory: ci/plugin-types
+        run: npm ci --no-audit --no-fund
+      - name: Check the plugin's public types
+        working-directory: ci/plugin-types
+        run: npx --no-install tsc -p .
+
   deny:
     name: cargo deny (${{ matrix.checks }})
     runs-on: ubuntu-latest
