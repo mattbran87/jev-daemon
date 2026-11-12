@@ -259,6 +259,11 @@ fn valid_code(code: &str) -> bool {
     code.len() == CODE_LENGTH && code.bytes().all(|b| CODE_ALPHABET.contains(&b))
 }
 
+/// A request ID hash as `hash_request_id` writes it: 64 lowercase hex digits.
+fn valid_id_sha256(hash: &str) -> bool {
+    hash.len() == 64 && hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
 /// Deletes a pending file that jevd cannot use, and returns the line for the log.
 /// The line never holds text from the file.
 fn discard(path: &Path, problem: &str) -> String {
@@ -357,9 +362,11 @@ impl Pairings {
             if saved.deadline <= now_unix {
                 continue;
             }
+            // A `cli` entry gets a new ID below, so its saved hash is not used.
             let valid = valid_name(&saved.name)
                 && saved.profile.as_deref().is_none_or(valid_name)
-                && valid_code(&saved.code);
+                && valid_code(&saved.code)
+                && (saved.cli || valid_id_sha256(&saved.id_sha256));
             if !valid || !codes.insert(saved.code.clone()) {
                 continue;
             }
@@ -1835,6 +1842,34 @@ mod tests {
         let mut expected: Vec<String> = (2..MAX_PENDING + 2).map(|i| format!("app{i}")).collect();
         expected.sort();
         assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn a_load_drops_a_socket_entry_with_a_bad_id_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut empty = saved("AAAAAAAA", "empty", T + 300);
+        empty["id_sha256"] = "".into();
+        let mut short = saved("BBBBBBBB", "short", T + 300);
+        short["id_sha256"] = "a".repeat(63).into();
+        let mut upper = saved("CCCCCCCC", "upper", T + 300);
+        upper["id_sha256"] = hash_request_id("CCCCCCCC").to_ascii_uppercase().into();
+        // jevd gives a `cli` entry a new ID at the load, so its hash does not matter.
+        let mut cli = saved("DDDDDDDD", "cli", T + 300);
+        cli["id_sha256"] = "".into();
+        cli["cli"] = true.into();
+        write_pending(
+            &dir,
+            vec![empty, short, upper, cli, saved("EEEEEEEE", "good", T + 300)],
+        );
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let mut names: Vec<String> = pairings
+            .pending_list(now)
+            .into_iter()
+            .map(|view| view.name)
+            .collect();
+        names.sort();
+        assert_eq!(names, ["cli", "good"]);
     }
 
     #[test]
