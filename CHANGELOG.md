@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
 - With `JEV_HOME` set, `jev` and `jevd` keep keys and client tokens under the keyring service `jev-` plus a 16-digit hash of the folder. Before, they used the service `jev`, so `jev key add` under a test `JEV_HOME` replaced the real key. Without `JEV_HOME`, nothing changes.
 - A `JEV_HOME` folder that held keys before this change looks empty after the update. Run `jev key add` again, and pair each client again.
