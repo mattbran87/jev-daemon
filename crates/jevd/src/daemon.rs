@@ -88,6 +88,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// The message for a failed approve or deny. `jev allow` prints the same text.
+const NO_SUCH_CODE: &str =
+    "no waiting request has that code; run jev allow with no code to see the waiting requests";
+
 pub(crate) fn failure(code: ErrorCode, message: impl Into<String>) -> Reply {
     Reply::failure(WireError::new(code, message))
 }
@@ -278,6 +282,14 @@ impl Daemon {
     }
 
     fn approve(&self, code: &str, profile: &str) -> Reply {
+        // `Pairings::approve` refuses this name too, but with no reason, and
+        // the message below would then blame the code.
+        if !jev_proto::valid_name(profile) {
+            return failure(
+                ErrorCode::BadRequest,
+                format!("{profile:?} is not a valid profile name"),
+            );
+        }
         let mut state = self.lock();
         if !state.settings.profiles.iter().any(|known| known == profile) {
             return failure(
@@ -294,14 +306,14 @@ impl Daemon {
                 }
                 Reply::success(data)
             }
-            Err(code) => failure(code, "no waiting request has that code"),
+            Err(code) => failure(code, NO_SUCH_CODE),
         }
     }
 
     fn deny(&self, code: &str) -> Reply {
         match self.lock().pairings.deny(code, Instant::now()) {
             Ok(()) => done(),
-            Err(code) => failure(code, "no waiting request has that code"),
+            Err(code) => failure(code, NO_SUCH_CODE),
         }
     }
 
@@ -810,6 +822,63 @@ pub(crate) mod tests {
         )
         .await;
         assert_eq!(code_of(&limit), Some(ErrorCode::BadRequest));
+    }
+
+    #[tokio::test]
+    async fn approve_and_deny_say_what_to_do_about_an_unknown_code() {
+        let f = fixture();
+        let message = |reply: &Reply| reply.error.as_ref().unwrap().message.clone();
+        let deny = call(
+            &f.daemon,
+            Peer::Jev,
+            Request::Deny {
+                code: "ABCD2345".into(),
+            },
+        )
+        .await;
+        assert_eq!(code_of(&deny), Some(ErrorCode::BadRequest));
+        assert_eq!(message(&deny), NO_SUCH_CODE);
+        let approve = call(
+            &f.daemon,
+            Peer::Jev,
+            Request::Approve {
+                code: "ABCD2345".into(),
+                profile: "default".into(),
+            },
+        )
+        .await;
+        assert_eq!(code_of(&approve), Some(ErrorCode::BadRequest));
+        assert_eq!(message(&approve), NO_SUCH_CODE);
+    }
+
+    #[tokio::test]
+    async fn approve_names_a_bad_profile_name() {
+        let f = fixture();
+        // Only a hand-edited settings file can hold a name like this.
+        f.daemon.lock().settings.profiles.push("Bad Name".into());
+        let pair = call(
+            &f.daemon,
+            Peer::Other,
+            Request::Pair {
+                name: "app".into(),
+                profile: None,
+            },
+        )
+        .await;
+        let code = pair.data["code"].as_str().unwrap().to_string();
+        let approve = call(
+            &f.daemon,
+            Peer::Jev,
+            Request::Approve {
+                code,
+                profile: "Bad Name".into(),
+            },
+        )
+        .await;
+        assert_eq!(code_of(&approve), Some(ErrorCode::BadRequest));
+        let message = &approve.error.as_ref().unwrap().message;
+        assert!(message.contains("\"Bad Name\""), "{message}");
+        assert!(!message.contains("code"), "{message}");
     }
 
     #[tokio::test]
