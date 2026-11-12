@@ -61,15 +61,20 @@ export type JevFailure = {
 /**
  * One question. `noul` asks for a probability from 0 to 1 that the answer is
  * yes. `score` asks for a score and a confidence, and takes `criteria`: one
- * description for each level, from the lowest to the highest.
+ * description for each level, from the lowest to the highest. `choice` asks
+ * the model to pick one option, and takes `criteria`: 1 to 255 options by
+ * name, each with a description or `null`.
  */
 export type JevQuestion =
   | { type: 'noul'; instructions: string; [field: string]: unknown }
   | { type: 'score'; instructions: string; criteria: string[]; [field: string]: unknown }
+  | { type: 'choice'; instructions?: string; criteria: Record<string, unknown>; [field: string]: unknown }
 
+/** A `choice` answer names one of the question's options in `choice`. */
 export type JevAnswer =
   | { type: 'noul'; noul: number; [field: string]: unknown }
   | { type: 'score'; score: number; confidence: number; [field: string]: unknown }
+  | { type: 'choice'; choice: string; confidence: number; probabilities: Record<string, number>; [field: string]: unknown }
 
 export type JevAskInput = {
   /** What Jev reads. jevd redacts secrets with known shapes before the send. */

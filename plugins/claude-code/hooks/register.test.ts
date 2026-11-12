@@ -64,6 +64,7 @@ const ACME: Plugin = {
         const overhead = JSON.stringify({ state: '', questions: QUESTIONS }).length
         out = await $.jev.ask({ state: 'x'.repeat(1048576 - overhead), questions: QUESTIONS as never })
       } else if (args === 'big') out = await $.jev.ask({ state: 'x'.repeat(1024 * 1024), questions: QUESTIONS as never })
+      else if (args === 'choice') out = await $.jev.ask({ state: 's', questions: { mood: { type: 'choice', criteria: { angry: null, calm: null } } } })
       else out = await $.jev.ask({ state: { files: ['a.py'] }, questions: QUESTIONS as never })
       return { text: JSON.stringify(out) }
     })
@@ -95,6 +96,15 @@ test('$.jev.ask sends the request on stdin as the client cc-<plugin>', { plugins
   expect(run?.argv).toEqual(['jev', 'ask', '--client', 'cc-acme-review'])
   expect(JSON.parse(run?.stdin ?? '')).toEqual({ state: { files: ['a.py'] }, questions: QUESTIONS })
   expect(seen.toasts).toEqual([])
+})
+
+test('a choice question and its answer pass through', { plugins: [ACME] }, async ($, on) => {
+  resetForTests()
+  const answers = { mood: { type: 'choice', choice: 'calm', confidence: 0.7, probabilities: { angry: 0.3, calm: 0.7 } } }
+  const seen = engine(on, { jev: args => (args[0] === 'ask' ? line({ ok: true, answers }) : line({ ok: true })) })
+  expect(await acme($, 'choice')).toEqual({ ok: true, answers })
+  const run = calls(seen.runs, 'ask')[0]
+  expect(JSON.parse(run?.stdin ?? '')).toEqual({ state: 's', questions: { mood: { type: 'choice', criteria: { angry: null, calm: null } } } })
 })
 
 test('the jevPath option names the binary', withPath(' C:/tools/jev.exe '), async ($, on) => {
