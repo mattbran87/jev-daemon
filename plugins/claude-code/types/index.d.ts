@@ -8,6 +8,15 @@
  * Jev. The codes from `jev` are its JSON error codes; a code this list does
  * not name comes from a newer `jev`, so treat it as an unknown failure. A
  * reply with no readable JSON is `jev-failed`.
+ *
+ * Did Jev get the request? (Spec section 6, "Did Jev get the request?")
+ * - No: `bad-request`, `too-large`, `forbidden`, `pending`, `not-paired`,
+ *   `revoked`, `no-key`, `bad-key`, `rate-limited`, `protocol-unsupported`,
+ *   `internal`, `jev-missing`, `jev-outdated`.
+ * - Yes: `jev-unauthorized`, `jev-http-error` (maybe twice: jevd retries a
+ *   429 or 529 once), `bad-answer`.
+ * - Maybe: `jev-timeout`, `jev-unreachable`, `daemon-unavailable`,
+ *   `jev-failed`, and any code this list does not name.
  */
 export type JevErrorCode =
   | 'pending'

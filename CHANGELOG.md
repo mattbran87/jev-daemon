@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The design spec and the plugin's `JevErrorCode` comment say, for each error code of a failed ask, whether Jev got the request: no, yes, or maybe. The programs do not change.
+
 ## 0.1.3
 
 - With `JEV_HOME` set, `jev` and `jevd` keep keys and client tokens under the keyring service `jev-` plus a 16-digit hash of the folder. Before, they used the service `jev`, so `jev key add` under a test `JEV_HOME` replaced the real key. Without `JEV_HOME`, nothing changes.

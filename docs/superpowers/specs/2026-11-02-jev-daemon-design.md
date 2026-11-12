@@ -296,6 +296,23 @@ The rate limit default replaces the prototype's `60/600`, which was an unmeasure
 | 8 | `daemon-unavailable`, `protocol-unsupported` |
 | 9 | `forbidden`, `bad-request`, `too-large` |
 
+### Did Jev get the request?
+
+A client that tells its user what it sent needs to know which failures come before the call to Jev. The error code of a failed `ask` answers this:
+
+| Jev got the request | Codes |
+| --- | --- |
+| No | `bad-request`, `too-large`, `forbidden`, `pending`, `not-paired`, `revoked`, `no-key`, `bad-key`, `rate-limited`, `protocol-unsupported`, `internal` |
+| Yes | `jev-unauthorized`, `jev-http-error`, `bad-answer` |
+| Maybe | `jev-timeout`, `jev-unreachable`, `daemon-unavailable` |
+
+- jevd checks the shape, the token, the key, and the rate limit, in that order, before it calls Jev. So a "No" code proves that Jev got nothing. A bad command line (exit 2) also sends nothing.
+- `jev-timeout` and `jev-unreachable` can come after Jev got the request: the send or the read of the reply breaks off.
+- `daemon-unavailable` from a failed connect comes before the send. From a reply timeout or a closed connection, it comes after jevd got the request, and jevd may have called Jev. The code does not tell the two cases apart, so a client must treat it as "Maybe".
+- jevd retries a 429 or 529 reply once. So with `jev-http-error`, Jev may have got the request twice.
+- A failed Jev call still uses a rate-limit slot.
+- `bad-answer` from `jev ask --value` comes after a reply, so Jev got the request.
+
 ## 7. Claude Code mod
 
 The mod holds no key, no token, and no socket code. It has no `/jev allow` and no shell guard.
@@ -314,6 +331,7 @@ A failure can also carry `retryAfter`, `profile`, and, for `pending`, `pairCode`
 - `jev-missing`: the `jev` binary does not start, `jev --version` prints no jev version, or `jevPath` is not an absolute path.
 - `jev-failed`: a `jev` run does not finish, or the mod cannot read its reply. A reply with no readable JSON, a JSON value with the wrong shape, or an error code that does not match `[a-z0-9][a-z0-9-]{0,63}` is always `jev-failed`. Its message names the exit code. A `--version` run that does not finish is `jev-failed`, with no toast.
 - The mod cleans the message that it passes on: control, bidi, and invisible format characters become spaces. It cuts the message to 300 code points.
+- Did Jev get the request? For a code from `jev`, see "Did Jev get the request?" in section 6. With `jev-missing` and `jev-outdated`, Jev got nothing, because the mod runs no `jev ask`. With `jev-failed`, Jev may have got the request, because the `jev ask` run can stop or print an unreadable reply after the send.
 
 `$.jev.status` shows a missing or old `jev` in its fields (`installed`, `compatible`), never as `jev-missing` or `jev-outdated`. Its only failures are `bad-request` and `internal`.
 
