@@ -44,7 +44,7 @@ A new job in `.github/workflows/ci.yml`, named `plugin types`:
 
 - It runs on `ubuntu-latest` only, because the result does not depend on the OS.
 - It uses the same pinned `actions/checkout` and `actions/setup-node` as the `mod` job, with `persist-credentials: false` and Node 22.
-- Its steps: `npm ci` in `ci/plugin-types`, then `npx tsc -p .` in that folder.
+- Its steps: `npm ci` in `ci/plugin-types`, then `npx --no-install tsc -p .` in that folder.
 
 ## 4. A check that the check works
 
