@@ -199,13 +199,13 @@ The keyring write comes before the commit. In the other order, a locked keyring 
 
 `jevd` runs these in order on each `ask`. A request that fails a check stops there.
 
-1. **Shape.** `state` present, nesting depth at most 64 levels. `questions`: 1 to 20 entries. IDs match `[A-Za-z0-9_-]{1,64}`. Type `noul` or `score`.
+1. **Shape.** `state` present, nesting depth at most 64 levels. `questions`: 1 to 20 entries. IDs match `[A-Za-z0-9_-]{1,64}`. Type `noul`, `score`, or `choice`. A `choice` needs `criteria`: an object with 1 to 255 options by name.
 2. **Token.** The token's SHA-256 matches a client in the pairing file.
 3. **Key.** From the cache or the keyring. Printable ASCII, no spaces, 1 to 512 characters. A control character in a header makes an HTTP library put the key in its error text. A request whose key fails here uses no rate-limit slot, so a client keeps its slots while the person fixes the key.
 4. **Rate limit.** A sliding window per client, kept in memory. A refused request gets `rate-limited` with `retry_after` in seconds. An idle exit or a restart resets the counts. Just before `jevd` takes a slot, it checks the token again, so `jev revoke` stops a request that waits on a keyring read.
 5. **Redaction.** Every string in `state` and `questions`: the key itself, PEM private keys, `Bearer` and `Basic` values, `sk-` and `tsk-` keys, GitHub, AWS, and Slack token shapes, and the value after a name such as `password=` or `api_key:`. `jevd` leaves dict keys as they are, because 2 keys can become the same text. With `redact-strict on`, `jevd` also redacts string values under secret-looking keys.
 6. **Send.** `https://api.typesafe.ai/v1/systemone`, model `jev-latest`. 2 attempts of 15 seconds each, with a 1-second pause. Retries only on 429 and 529. Redirects never followed, because a redirect would resend the `Authorization` header to the new host. A 401 or a 403 is `jev-unauthorized`. Any other status that is not 200, a redirect included, is `jev-http-error` with the status. A 200 body over its cap is `bad-answer`; an error body over its cap gives no detail. Only an `https` endpoint is used. When an error body cannot be read for a reason other than a timeout, the status still counts.
-7. **Answer check.** Each question has an answer of its own type. `noul` is a finite number from 0 to 1. `score` and `confidence` are finite numbers. Response capped at 1 MiB, error body at 4 KiB. An answer deeper than 64 levels, or one with an object key that contains the key, is `bad-answer`. `jevd` replaces the key and its encoded forms in the answer's string values.
+7. **Answer check.** Each question has an answer of its own type. `noul` is a finite number from 0 to 1. `score` and `confidence` are finite numbers. A `choice` answer's `choice` is a key of the question's `criteria`, and its `confidence` is a finite number from 0 to 1. Response capped at 1 MiB, error body at 4 KiB. An answer deeper than 64 levels, or one with an object key that contains the key, is `bad-answer`. `jevd` replaces the key and its encoded forms in the answer's string values.
 
 `jevd` redacts every error `detail`, including the JSON-escaped and percent-encoded forms of the key, turns control and bidi characters into spaces, and then cuts it to 300 characters.
 
@@ -253,14 +253,14 @@ The rate limit default replaces the prototype's `60/600`, which was an unmeasure
 
 ### `jev ask`
 
-- **Input.** JSON on stdin, or flags: `--state <text>` or `--state @<file>`, and repeatable `--noul <id>=<question>` and `--score <id>=<question>`. `--request <json>` passes JSON as an argument, for a caller that gives no stdin. Question flags plus a piped stdin exit with code 2. A terminal stdin with no question flags and no `--request` exits with code 2. Its failure JSON tells the three ways to give the request; `jev` prints no usage text.
+- **Input.** JSON on stdin, or flags: `--state <text>` or `--state @<file>`, and repeatable `--noul <id>=<question>`, `--score <id>=<question>`, and `--choice <id>=<question>`. Each `--score` needs 1 to 10 `--level <id>=<text>`, from the lowest level to the highest. Each `--choice` needs 1 to 255 `--option <id>=<name>`; an option from a flag has no description. An `--option` or `--level` that names no question of its type, or a name given twice on one question, exits with code 2. `--request <json>` passes JSON as an argument, for a caller that gives no stdin. Question flags plus a piped stdin exit with code 2. A terminal stdin with no question flags and no `--request` exits with code 2. Its failure JSON tells the three ways to give the request; `jev` prints no usage text.
 - **One source.** With question flags or `--request`, stdin must be a terminal or closed. When stdin is not a terminal, `jev` reads it to the end. Any data there other than white space and a byte order mark at the start, or more than 1 MiB, exits with code 2. A caller whose stdin is an open pipe that never closes waits.
 - **Size.** A request line over `MAX_LINE` (1 MiB) is `too-large` (exit 9). `jev` checks the size before it connects, so it does not start or wake `jevd` for such a request. `jev` reads at most 1 MiB of JSON from stdin, and at most 1 MiB from `--state @<file>`. More is `too-large`.
 - **Byte order mark.** `jev` skips a byte order mark at the start of the JSON on stdin.
 - **Question IDs.** `jev` checks each ID in the question flags with jevd's rule, `[A-Za-z0-9_-]{1,64}`. A bad ID, or the same ID two times, exits with code 2.
 - **Client.** `--client <name>` or `JEV_CLIENT`. No default client.
 - **Output.** Always JSON on stdout, for success and failure. `--value <id>` prints only that answer's number. On failure with `--value`, stdout stays empty and stderr gets the error code.
-- **`--value`.** An ID that names no question in the request exits with code 2. `jev` takes the number from the field that the answer's `type` names: `noul` or `score`. Any other answer is `bad-answer` (exit 7).
+- **`--value`.** An ID that names no question in the request exits with code 2. `jev` takes the value from the field that the answer's `type` names: the number in `noul` or `score`, or the option name in `choice`. So `--value` prints a name, not a number, for a choice question. Any other answer is `bad-answer` (exit 7).
 - **Bad command line.** When clap refuses the command line of `jev ask`, or of a command with `--json`, `jev` also prints one failure JSON line on stdout. Its code is `bad-request`. The exit code is 2.
 
 ### Shared behavior

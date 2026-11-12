@@ -3,6 +3,11 @@
 ## Unreleased
 
 - The design spec and the plugin's `JevErrorCode` comment say, for each error code of a failed ask, whether Jev got the request: no, yes, or maybe. The programs do not change.
+- jevd accepts `choice` questions. A choice question needs `criteria` with 1 to 255 options, and the answer's `choice` must be one of them. An older `jevd` refuses a choice question with `bad-request`; run `jev stop`, and the next request starts the new `jevd`.
+- `jev ask` has 3 new flags: `--choice <id>=<question>`, `--option <id>=<name>`, and `--level <id>=<text>`. `--level` gives the levels of a `--score` question, from the lowest to the highest.
+- `jev ask --value` prints the option name of a choice answer, not a number.
+- `jev ask --score` with no `--level` now exits 2 and calls nothing. Before, it reached Jev, and Jev refused it because the API needs `criteria`.
+- The plugin's types describe `choice` questions and answers.
 
 ## 0.1.3
 
