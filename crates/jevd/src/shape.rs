@@ -4,7 +4,9 @@ use serde_json::Value;
 
 pub const MAX_QUESTIONS: usize = 20;
 pub const MAX_DEPTH: usize = 64;
-pub const QUESTION_TYPES: [&str; 2] = ["noul", "score"];
+pub const QUESTION_TYPES: [&str; 3] = ["noul", "score", "choice"];
+/// The most options one choice question can have (TypeSafe's limit).
+pub const MAX_CHOICES: usize = 255;
 
 /// 1 to 64 characters from `[A-Za-z0-9_-]`.
 pub fn valid_question_id(id: &str) -> bool {
@@ -15,7 +17,17 @@ pub fn valid_question_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-/// 1 to 20 ids, each mapped to an object whose `type` is `noul` or `score`.
+/// A choice question needs `criteria`: an object of 1 to 255 options by name.
+/// The answer check needs those names.
+fn valid_choice(question: &Value) -> bool {
+    question
+        .get("criteria")
+        .and_then(Value::as_object)
+        .is_some_and(|options| (1..=MAX_CHOICES).contains(&options.len()))
+}
+
+/// 1 to 20 ids, each mapped to an object whose `type` is `noul`, `score`, or
+/// `choice`. A `choice` also needs valid `criteria`.
 pub fn valid_questions(questions: &Value) -> bool {
     let Some(map) = questions.as_object() else {
         return false;
@@ -24,11 +36,10 @@ pub fn valid_questions(questions: &Value) -> bool {
         return false;
     }
     map.iter().all(|(id, question)| {
+        let kind = question.get("type").and_then(Value::as_str);
         valid_question_id(id)
-            && question
-                .get("type")
-                .and_then(Value::as_str)
-                .is_some_and(|kind| QUESTION_TYPES.contains(&kind))
+            && kind.is_some_and(|kind| QUESTION_TYPES.contains(&kind))
+            && (kind != Some("choice") || valid_choice(question))
     })
 }
 
@@ -50,7 +61,7 @@ pub fn check_ask(state: &Value, questions: &Value) -> Result<(), &'static str> {
         return Err("state is nested too deeply");
     }
     if !valid_questions(questions) {
-        return Err("questions must map 1 to 20 ids to objects with type noul or score");
+        return Err("questions must map 1 to 20 ids to objects with type noul, score, or choice; a choice needs criteria with 1 to 255 options");
     }
     Ok(())
 }
@@ -118,6 +129,29 @@ mod tests {
             check_ask(&json!(null), &json!({"q": {"type": "noul"}})),
             Ok(())
         );
+    }
+
+    #[test]
+    fn a_choice_needs_1_to_255_criteria() {
+        let options = |count: usize| -> Value {
+            let criteria: serde_json::Map<String, Value> =
+                (0..count).map(|i| (format!("o{i}"), Value::Null)).collect();
+            json!({"c": {"type": "choice", "criteria": criteria}})
+        };
+        assert!(valid_questions(&options(1)));
+        assert!(valid_questions(&options(MAX_CHOICES)));
+        assert!(!valid_questions(&options(0)));
+        assert!(!valid_questions(&options(MAX_CHOICES + 1)));
+        assert!(valid_questions(
+            &json!({"c": {"type": "choice", "instructions": "Mood?", "criteria": {"angry": "Upset", "calm": null}}})
+        ));
+        assert!(!valid_questions(&json!({"c": {"type": "choice"}})));
+        assert!(!valid_questions(
+            &json!({"c": {"type": "choice", "criteria": ["angry", "calm"]}})
+        ));
+        // jevd leaves score criteria to Jev, as before.
+        assert!(valid_questions(&json!({"s": {"type": "score"}})));
+        assert!(check_ask(&json!("s"), &json!({"c": {"type": "choice"}})).is_err());
     }
 
     #[test]
