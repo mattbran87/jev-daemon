@@ -4,7 +4,7 @@
 
 - jevd's message for an unknown pairing code says to run `jev allow` with no code. jevd also names a bad profile name, where it blamed the code before.
 - jevd drops a waiting socket request in `pending.json` whose `id_sha256` is not a SHA-256. No client could collect such a request.
-- After a clock change, jevd keeps the 16 newest waiting requests, not the 16 whose codes sort first.
+- After the clock is set back, jevd keeps the 16 newest waiting requests, not the 16 whose codes sort first.
 
 ## 0.1.4
 

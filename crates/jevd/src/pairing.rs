@@ -373,7 +373,7 @@ impl Pairings {
             let left = (saved.deadline - now_unix).min(PENDING_EXPIRY.as_secs());
             kept.push((left, saved));
         }
-        // The latest deadlines stay, and the earliest go first. Sort by the
+        // The latest deadlines stay; the earliest are dropped first. Sort by the
         // saved deadline, not by the time left: after the cap, many entries
         // can have the same time left, and the newest of them must stay.
         kept.sort_by_key(|(_, saved)| std::cmp::Reverse(saved.deadline));

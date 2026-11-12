@@ -87,7 +87,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
-
+/// The message for a failed approve or deny: the same text as `NO_SUCH_CODE` in `jev`.
 /// The message for a failed approve or deny. `jev allow` prints the same text.
 const NO_SUCH_CODE: &str =
     "no waiting request has that code; run jev allow with no code to see the waiting requests";

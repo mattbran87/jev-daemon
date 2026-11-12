@@ -1,7 +1,7 @@
 # Three small jevd defects
 
 **Date:** 2026-11-12
-**Status:** approved design, not built
+**Status:** built
 
 This change fixes 3 small defects in jevd's pairing code. None of them changes the wire protocol, a file format, or an exit code.
 
