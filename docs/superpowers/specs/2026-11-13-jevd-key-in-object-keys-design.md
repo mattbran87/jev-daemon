@@ -15,7 +15,7 @@ jevd redacts the key in string values only (spec section 4, step 5). It leaves o
 - a name in the `criteria` of a `score` question, when that `criteria` is an object (jevd leaves the shape of score criteria to Jev);
 - any other object key inside `questions`.
 
-A second effect comes after the answer. If an option name holds the key, the answer's `choice` passes the answer check, and then the scrub replaces the key in it. `jev ask --value` then prints `[REDACTED]`, which is not one of the options.
+A second effect comes after the answer. If an option name holds the key, the answer's `choice` passes the answer check, and then the scrub replaces the key in it. `jev ask --value` then prints `[redacted]`, which is not one of the options.
 
 The key leaks only when the caller puts the key itself into an object key. Real names almost never hold an API key.
 
@@ -30,9 +30,9 @@ A new check in `Daemon::ask` (`crates/jevd/src/ask.rs`), after the key read and 
 
 The check must come after the key read, because jevd needs the key to compare. It comes before the rate limit, so a refused request uses no slot, as a bad key uses none.
 
-So Jev gets no request, and the second effect cannot happen: an option name can no longer hold the key, so a `choice` answer cannot become `[REDACTED]`. The answer check and the scrub do not change.
+So Jev gets no request, and the second effect cannot happen: an option name can no longer hold the key, so a `choice` answer cannot become `[redacted]`. The answer check and the scrub do not change.
 
-Rejected: redact object keys. 2 renamed keys can collide, and a redacted option name makes `--value` print `[REDACTED]`.
+Rejected: redact object keys. 2 renamed keys can collide, and a redacted option name makes `--value` print `[redacted]`.
 
 ## Order of the checks
 
@@ -54,7 +54,8 @@ In `crates/jevd/src/ask.rs`:
 
 ## Docs
 
-- Spec section 4, as above.
+- Spec section 4, as above. The sentence under the steps that names "steps 1, 3, 5, 6, and 7" becomes "steps 1, 3, 6, 7, and 8".
+- The code comments that cite a step of section 4 by number change to the new numbers: `ratelimit.rs`, `redact.rs`, `jev_http.rs`, `jev.rs`, and `answer.rs`. The module comment of `ask.rs` names the new check in its list.
 - A new `## Unreleased` section in `CHANGELOG.md`, above `## 0.1.5`, with one line about the new refusal.
 - Close #18 after the merge.
 
