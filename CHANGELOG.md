@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- jevd refuses an `ask` with `bad-request` when an object key in `state` or `questions` contains the API key, such as an option name of a `choice` question. Before, jevd redacted the key only in string values, so such a request reached Jev with the key in it ([#18](https://github.com/mattbran87/jev-daemon/issues/18)). The refused request uses no rate-limit slot.
+
 ## 0.1.5
 
 - jevd's message for an unknown pairing code says to run `jev allow` with no code. jevd also names a bad profile name, where it blamed the code before.
