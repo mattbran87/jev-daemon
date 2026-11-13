@@ -1,7 +1,7 @@
 # The API key in an object key
 
 **Date:** 2026-11-13
-**Status:** design
+**Status:** built
 **Issue:** [#18](https://github.com/mattbran87/jev-daemon/issues/18)
 
 jevd now refuses an `ask` when an object key in `state` or `questions` contains the API key. Before, such a request reached Jev with the key in it. No wire format, file format, or exit code changes.
