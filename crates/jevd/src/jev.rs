@@ -129,7 +129,8 @@ fn percent_encode(text: &str) -> String {
 
 /// True when an object key, at any level, contains the key. Such a request or
 /// answer is refused rather than renamed, since renamed keys could collide.
-/// Called only after the depth check, so the recursion is bounded.
+/// The depth check caps `state` and answers at 64 levels, and the parser caps
+/// a request at 128, so the recursion is bounded.
 pub(crate) fn names_key(value: &Value, key: &str) -> bool {
     match value {
         Value::Array(items) => items.iter().any(|item| names_key(item, key)),

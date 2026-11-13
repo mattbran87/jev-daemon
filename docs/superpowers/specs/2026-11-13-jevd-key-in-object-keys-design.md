@@ -26,7 +26,7 @@ A new check in `Daemon::ask` (`crates/jevd/src/ask.rs`), after the key read and 
 - If any object key in `state` or in `questions`, at any depth, contains the key, `ask` returns `bad-request`.
 - The message is `an object key in state or questions contains the API key`. It never shows the object key.
 - The match is the literal key, the same match as the answer check. The key has no spaces (step 3), so the trimmed key and the key are the same text.
-- The check uses `names_key` from `crates/jevd/src/jev.rs`, which becomes `pub(crate)`. The shape check already caps the depth at 64, so the walk is bounded.
+- The check uses `names_key` from `crates/jevd/src/jev.rs`, which becomes `pub(crate)`. The shape check caps `state` at 64 levels, and the JSON parser caps a whole request at 128, so the walk is bounded. `questions` has no depth check of its own; the redaction walks it the same way.
 
 The check must come after the key read, because jevd needs the key to compare. It comes before the rate limit, so a refused request uses no slot, as a bad key uses none.
 

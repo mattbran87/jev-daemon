@@ -438,6 +438,7 @@ mod tests {
         let reply = call(&f.daemon, Peer::Other, request).await;
         assert!(reply.ok, "{reply:?}");
         let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
         let sent = String::from_utf8(requests[0].body.clone()).unwrap();
         assert!(!sent.contains(KEY), "{sent}");
         assert!(sent.contains("[redacted]"), "{sent}");
