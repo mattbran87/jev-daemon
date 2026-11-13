@@ -7,7 +7,7 @@ jev lets local programs ask TypeSafe's Jev model while one background process, `
 - `jev-tray`: a tray icon that shows whether `jevd` runs.
 - `plugins/claude-code`: a Claude Code plugin that gives other plugins `$.jev`.
 
-**Status:** 0.1.4. See [CHANGELOG.md](CHANGELOG.md).
+**Status:** 0.1.5. See [CHANGELOG.md](CHANGELOG.md).
 
 ## Install
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.5
 
 - jevd's message for an unknown pairing code says to run `jev allow` with no code. jevd also names a bad profile name, where it blamed the code before.
 - jevd drops a waiting socket request in `pending.json` whose `id_sha256` is not a SHA-256. No client could collect such a request.

@@ -1,6 +1,6 @@
 {
   "name": "jev-daemon",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "author": { "name": "Matthew Brandenburg", "email": "mattbran87@users.noreply.github.com" },
   "license": "Apache-2.0",
   "description": "Gives other Claude Code plugins $.jev: they ask TypeSafe's Jev model through the jev CLI, which holds your keys. Each plugin pairs once, and you approve it with jev allow in a terminal.",
