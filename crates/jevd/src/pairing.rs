@@ -354,7 +354,6 @@ impl Pairings {
                 return Some(discard(path, &problem));
             }
         };
-        let mut codes = BTreeSet::new();
         // Each entry with the seconds it has left, at most 10 minutes, so a
         // clock moved back cannot keep a request alive longer.
         let mut kept: Vec<(u64, SavedRequest)> = Vec::new();
@@ -367,7 +366,7 @@ impl Pairings {
                 && saved.profile.as_deref().is_none_or(valid_name)
                 && valid_code(&saved.code)
                 && (saved.cli || valid_id_sha256(&saved.id_sha256));
-            if !valid || !codes.insert(saved.code.clone()) {
+            if !valid {
                 continue;
             }
             let left = (saved.deadline - now_unix).min(PENDING_EXPIRY.as_secs());
@@ -377,8 +376,17 @@ impl Pairings {
         // saved deadline, not by the time left: after the cap, many entries
         // can have the same time left, and the newest of them must stay.
         kept.sort_by_key(|(_, saved)| std::cmp::Reverse(saved.deadline));
-        kept.truncate(MAX_PENDING);
+        // Walk the newest first, so of 2 entries with one code or one key the
+        // newer stays, and a skipped entry does not take one of the places.
+        let mut codes = BTreeSet::new();
+        let mut loaded = 0;
         for (left, saved) in kept {
+            if loaded == MAX_PENDING {
+                break;
+            }
+            if codes.contains(&saved.code) {
+                continue;
+            }
             // jevd does not know the ID of a request from `jev` any more, and
             // `jev` never polls with it, so it gets a new one.
             let cli_id = saved.cli.then(|| random_hex(REQUEST_ID_HEX_LENGTH / 2));
@@ -386,6 +394,8 @@ impl Pairings {
             if self.pending.contains_key(&key) {
                 continue;
             }
+            codes.insert(saved.code.clone());
+            loaded += 1;
             self.pending.insert(
                 key,
                 Pending {
@@ -1841,7 +1851,9 @@ mod tests {
             .map(|view| view.name)
             .collect();
         names.sort();
-        let mut expected: Vec<String> = (2..MAX_PENDING + 2).map(|i| format!("app{i}")).collect();
+        // "copy" shares its code with app17 and is newer, so it replaces app17.
+        let mut expected: Vec<String> = (2..MAX_PENDING + 1).map(|i| format!("app{i}")).collect();
+        expected.push("copy".to_string());
         expected.sort();
         assert_eq!(names, expected);
     }
@@ -1894,6 +1906,48 @@ mod tests {
             .collect();
         names.sort();
         let mut expected: Vec<String> = (1..MAX_PENDING + 1).map(|i| format!("app{i}")).collect();
+        expected.sort();
+        assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn a_load_keeps_the_newer_of_two_entries_with_one_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let older = saved("AAAAAAAA", "older", T + 100);
+        // A different key, so only the code is shared.
+        let mut newer = saved("AAAAAAAA", "newer", T + 200);
+        newer["id_sha256"] = hash_request_id("another request").into();
+        write_pending(&dir, vec![older, newer]);
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let names: Vec<String> = pairings
+            .pending_list(now)
+            .into_iter()
+            .map(|view| view.name)
+            .collect();
+        assert_eq!(names, ["newer"]);
+    }
+
+    #[test]
+    fn a_shared_key_does_not_take_one_of_the_16_places() {
+        let dir = tempfile::tempdir().unwrap();
+        let code = |i: usize| (CODE_ALPHABET[i] as char).to_string().repeat(CODE_LENGTH);
+        let mut requests: Vec<serde_json::Value> = (0..MAX_PENDING + 1)
+            .map(|i| saved(&code(i), &format!("app{i}"), T + 100 + i as u64))
+            .collect();
+        // app15 and app16 are the 2 newest, and they share a key.
+        requests[MAX_PENDING - 1]["id_sha256"] = requests[MAX_PENDING]["id_sha256"].clone();
+        write_pending(&dir, requests);
+        let now = Instant::now();
+        let mut pairings = reload(&dir, now, T);
+        let mut names: Vec<String> = pairings
+            .pending_list(now)
+            .into_iter()
+            .map(|view| view.name)
+            .collect();
+        names.sort();
+        let mut expected: Vec<String> = (0..MAX_PENDING - 1).map(|i| format!("app{i}")).collect();
+        expected.push(format!("app{MAX_PENDING}"));
         expected.sort();
         assert_eq!(names, expected);
     }
