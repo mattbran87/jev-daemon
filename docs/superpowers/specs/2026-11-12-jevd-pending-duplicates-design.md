@@ -1,7 +1,7 @@
 # Duplicates in jevd's pending file
 
 **Date:** 2026-11-12
-**Status:** approved design, not built
+**Status:** built
 
 This change fixes 2 defects in how jevd loads `pending.json` when 2 entries share a code or a key. Both need a hand-edited or damaged file, because jevd itself never writes 2 entries with the same code or key. No wire format, file format, or exit code changes.
 
@@ -9,7 +9,7 @@ This change fixes 2 defects in how jevd loads `pending.json` when 2 entries shar
 
 Each entry in `pending.json` has a `deadline`: the Unix time, in seconds, when the waiting request expires. When a client asks to pair, jevd sets it to the current time plus `PENDING_EXPIRY` (600 seconds). Every request gets the same 10 minutes, so a later deadline means a newer request.
 
-One limit: if the clock is set back between 2 requests, the newer request can get the earlier deadline. No saved field records the true arrival order, so the load uses the deadline.
+One limit: if the clock is set back between 2 requests, the newer request can get the earlier deadline. No saved field records the true arrival order, so the load uses the deadline. If 2 duplicates have the same deadline, the one that comes first in the file stays.
 
 ## Defects
 
@@ -34,6 +34,7 @@ A `cli` entry gets a new random request ID at the load, and its key is the hash 
 
 - 2 entries with the same code and different deadlines. The one with the later deadline stays, and it comes second in the file.
 - 17 valid socket entries, 2 of which share an `id_sha256`. 16 entries load, not 15. Of the 2 that share a key, the one with the later deadline stays.
+- The existing test `a_load_keeps_the_16_latest_valid_entries` changes its expected result. Its `copy` entry shares the code and the key of `app17` and has a later deadline, so `copy` now loads in place of `app17`.
 
 ## Docs
 
