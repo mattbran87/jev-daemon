@@ -1,5 +1,5 @@
 //! One request to TypeSafe's Jev model: the body, and what a response means
-//! (spec section 4, steps 6 and 7). `jev_http` does the sending.
+//! (spec section 4, steps 7 and 8). `jev_http` does the sending.
 
 use jev_proto::{ErrorCode, WireError};
 use serde_json::{json, Value};

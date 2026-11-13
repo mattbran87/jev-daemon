@@ -1,4 +1,4 @@
-//! A sliding window of requests for each client (spec section 4, step 4).
+//! A sliding window of requests for each client (spec section 4, step 5).
 //! Counts live in memory, so an idle exit or a restart resets them.
 
 use crate::units::Limit;

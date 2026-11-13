@@ -1,5 +1,5 @@
 //! Replace the API key and anything shaped like a secret before a send
-//! (spec section 4, step 5). Ported from the prototype's `redact.py`.
+//! (spec section 4, step 6). Ported from the prototype's `redact.py`.
 
 use regex::{Captures, NoExpand, Regex};
 use serde_json::Value;

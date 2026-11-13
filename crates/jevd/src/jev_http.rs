@@ -1,4 +1,4 @@
-//! Sends one request to Jev over HTTPS (spec section 4, step 6).
+//! Sends one request to Jev over HTTPS (spec section 4, step 7).
 
 use std::time::Duration;
 

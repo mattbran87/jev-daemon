@@ -1,4 +1,4 @@
-//! The answer check (spec section 4, step 7).
+//! The answer check (spec section 4, step 8).
 
 use serde_json::Value;
 
