@@ -127,10 +127,10 @@ fn percent_encode(text: &str) -> String {
     out
 }
 
-/// True when an object key, at any level, contains the key. Such an answer is
-/// refused rather than renamed, since renamed keys could collide. Called only
-/// after the depth check, so the recursion is bounded.
-fn names_key(value: &Value, key: &str) -> bool {
+/// True when an object key, at any level, contains the key. Such a request or
+/// answer is refused rather than renamed, since renamed keys could collide.
+/// Called only after the depth check, so the recursion is bounded.
+pub(crate) fn names_key(value: &Value, key: &str) -> bool {
     match value {
         Value::Array(items) => items.iter().any(|item| names_key(item, key)),
         Value::Object(map) => map

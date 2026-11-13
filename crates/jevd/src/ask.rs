@@ -1,5 +1,5 @@
-//! One `ask` (spec section 4): shape, token, key, rate limit, then the Jev
-//! call, which redacts, sends, and checks the answer.
+//! One `ask` (spec section 4): shape, token, key, the key in object keys,
+//! rate limit, then the Jev call, which redacts, sends, and checks the answer.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
 use crate::daemon::{failure, unix_now, Daemon};
+use crate::jev::names_key;
 use crate::keycache::{read_key, Lookup, Ticket, READ_LIMIT};
 use crate::shape::check_ask;
 
@@ -31,6 +32,14 @@ impl Daemon {
             Ok(key) => key,
             Err(error) => return Reply::failure(error.for_profile(&client.profile)),
         };
+        // Redaction leaves object keys as they are, so a request that names
+        // the key in one never goes out. Like a bad key, it uses no slot.
+        if names_key(state, &key) || names_key(questions, &key) {
+            return failure(
+                ErrorCode::BadRequest,
+                "an object key in state or questions contains the API key",
+            );
+        }
         let strict = {
             let mut state = self.lock();
             // The key read may have taken long: look the token up again, so a
@@ -370,5 +379,67 @@ mod tests {
         assert!(call(&f.daemon, Peer::Jev, Request::Reload).await.ok);
         assert!(call(&f.daemon, Peer::Other, ask(&token)).await.ok);
         assert_eq!(store.reads(), 2);
+    }
+
+    /// One ask that holds `KEY` in an object key, and one good ask, with a
+    /// limit of 1 per minute: the refusal must use no slot.
+    async fn refused_before_the_slot(state: Value, questions: Value) {
+        let server = jev().await;
+        let f = fixture_with(keyring_with_key(), &server.uri());
+        let token = pair_socket(&f.daemon, "app", "default").await;
+        let one = Request::SetLimit {
+            name: "app".into(),
+            limit: Some("1/60".into()),
+        };
+        assert!(call(&f.daemon, Peer::Jev, one).await.ok);
+        let request = Request::Ask {
+            token: token.clone(),
+            state,
+            questions,
+        };
+        let reply = call(&f.daemon, Peer::Other, request).await;
+        assert_eq!(code_of(&reply), Some(ErrorCode::BadRequest));
+        assert_eq!(
+            reply.error.as_ref().unwrap().message,
+            "an object key in state or questions contains the API key"
+        );
+        assert!(!reply.to_line().contains(KEY));
+        assert!(server.received_requests().await.unwrap().is_empty());
+        let reply = call(&f.daemon, Peer::Other, ask(&token)).await;
+        assert!(reply.ok, "the refused ask used no slot: {reply:?}");
+    }
+
+    #[tokio::test]
+    async fn the_key_in_a_state_object_key_is_bad_request() {
+        let state = json!({"notes": {format!("token {KEY}"): "x"}});
+        refused_before_the_slot(state, questions()).await;
+    }
+
+    #[tokio::test]
+    async fn the_key_in_an_option_name_is_bad_request() {
+        let questions = json!({"c": {
+            "type": "choice",
+            "instructions": "Which one?",
+            "criteria": {"calm": "Calm", KEY: "The key"},
+        }});
+        refused_before_the_slot(json!("the state"), questions).await;
+    }
+
+    #[tokio::test]
+    async fn the_key_in_a_string_value_still_goes_out_redacted() {
+        let server = jev().await;
+        let f = fixture_with(keyring_with_key(), &server.uri());
+        let token = pair_socket(&f.daemon, "app", "default").await;
+        let request = Request::Ask {
+            token,
+            state: json!({"note": format!("token {KEY}")}),
+            questions: questions(),
+        };
+        let reply = call(&f.daemon, Peer::Other, request).await;
+        assert!(reply.ok, "{reply:?}");
+        let requests = server.received_requests().await.unwrap();
+        let sent = String::from_utf8(requests[0].body.clone()).unwrap();
+        assert!(!sent.contains(KEY), "{sent}");
+        assert!(sent.contains("[redacted]"), "{sent}");
     }
 }
